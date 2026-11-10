@@ -5,8 +5,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fetch.backend.common.error.BadRequestException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+
+import java.net.InetSocketAddress;
+import java.net.ProxySelector;
+import java.net.http.HttpClient;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -34,8 +39,18 @@ public class CjDropshippingClient {
                                 @Value("${CJ_API_KEY:}") String apiKey,
                                 @Value("${CJ_ORDER_CREATE_PATH:/shopping/order/createOrderV2}") String orderCreatePath,
                                 @Value("${CJ_FROM_COUNTRY_CODE:CN}") String defaultFromCountryCode,
-                                @Value("${CJ_LOGISTIC_NAME:}") String defaultLogisticName) {
-        this.rest = builder.baseUrl(BASE).build();
+                                @Value("${CJ_LOGISTIC_NAME:}") String defaultLogisticName,
+                                @Value("${CJ_PROXY_HOST:}") String proxyHost,
+                                @Value("${CJ_PROXY_PORT:0}") int proxyPort) {
+        RestClient.Builder b = builder.baseUrl(BASE);
+        if (proxyHost != null && !proxyHost.isBlank() && proxyPort > 0) {
+            HttpClient httpClient = HttpClient.newBuilder()
+                    .proxy(ProxySelector.of(new InetSocketAddress(proxyHost.trim(), proxyPort)))
+                    .connectTimeout(Duration.ofSeconds(20))
+                    .build();
+            b = b.requestFactory(new JdkClientHttpRequestFactory(httpClient));
+        }
+        this.rest = b.build();
         this.mapper = mapper;
         this.enabled = enabled;
         this.apiKey = apiKey == null ? "" : apiKey.trim();
