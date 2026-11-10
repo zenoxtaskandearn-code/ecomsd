@@ -49,7 +49,7 @@ public class CjProductImportTx {
         BigDecimal base = firstNonNull(detail != null ? detail.sellPrice() : null, item.sellPrice(), deriveVariantBase(detail));
         p.setBasePriceAmount(base != null ? base : BigDecimal.ZERO);
         p.setCurrency("USD");
-        p.setStatus("DRAFT");
+        p.setStatus("ACTIVE");
         p.setCjProductId(blankToNull(item.productId()));
         p.setSupplierSource("CJ_API");
         if (detail != null && blankToNull(detail.deliveryCycle()) != null) p.setEstimatedDelivery(detail.deliveryCycle().trim() + " days");

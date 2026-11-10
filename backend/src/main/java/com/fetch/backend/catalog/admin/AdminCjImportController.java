@@ -113,7 +113,7 @@ public class AdminCjImportController {
         if (base == null) base = BigDecimal.ZERO;
         p.setBasePriceAmount(base);
         p.setCurrency(blankToDefault(req.currency(), "USD"));
-        p.setStatus("DRAFT"); // imported products are drafts until published
+        p.setStatus("ACTIVE"); // publish imported CJ products so they are available immediately
         p.setCjProductId(blankToNull(req.cjProductId()));
         p.setSupplierSource("CJ_MANUAL");
         p.setSupplierId(req.supplierId());
@@ -175,7 +175,7 @@ public class AdminCjImportController {
         result.put("supplierShippingCostAmount", p.getSupplierShippingCostAmount());
         result.put("estimatedDelivery", p.getEstimatedDelivery());
         result.put("variants", variantMaps); result.put("images", imageMaps);
-        result.put("message", "CJ product imported as draft. Review details, variants, images, and selling prices before publishing.");
+        result.put("message", "CJ product imported and published (ACTIVE). Review details, variants, images, and selling prices anytime.");
         return result;
     }
 

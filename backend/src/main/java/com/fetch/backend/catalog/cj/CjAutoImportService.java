@@ -63,7 +63,7 @@ public class CjAutoImportService {
             messages.add("CJ API import stopped: " + safeMsg(e.getMessage()));
         }
         if (messages.isEmpty() && imported == 0 && skipped == 0 && failed == 0) messages.add("No CJ My Products found to import.");
-        if (imported > 0) messages.add("Imported products are saved as DRAFTS. Review details, variants, images, and selling prices before publishing.");
+        if (imported > 0) messages.add("Imported products are published as ACTIVE. Review details, variants, images, and selling prices anytime.");
         return new CatalogDtos.CjAutoImportSummary(max, scanned, imported, skipped, failed, messages, importedIds);
     }
 
@@ -133,7 +133,7 @@ public class CjAutoImportService {
                 if (messages.size() < 15) messages.add("Failed: " + cjPid + " — " + safeMsg(e.getMessage()));
             }
         }
-        if (imported > 0) messages.add("Imported products are saved as DRAFTS. Review details, variants, images, and selling prices before publishing.");
+        if (imported > 0) messages.add("Imported products are published as ACTIVE. Review details, variants, images, and selling prices anytime.");
         return new CatalogDtos.CjAutoImportSummary(ids.size(), scanned, imported, skipped, failed, messages, importedIds);
     }
 

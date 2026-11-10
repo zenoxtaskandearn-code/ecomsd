@@ -26,17 +26,24 @@ public class CjDropshippingClient {
     private final Object tokenLock = new Object();
 
     private final String orderCreatePath;
+    private final String defaultFromCountryCode;
+    private final String defaultLogisticName;
 
     public CjDropshippingClient(RestClient.Builder builder, ObjectMapper mapper,
                                 @Value("${CJ_API_ENABLED:false}") boolean enabled,
                                 @Value("${CJ_API_KEY:}") String apiKey,
-                                @Value("${CJ_ORDER_CREATE_PATH:/shopping/order/createOrderV2}") String orderCreatePath) {
+                                @Value("${CJ_ORDER_CREATE_PATH:/shopping/order/createOrderV2}") String orderCreatePath,
+                                @Value("${CJ_FROM_COUNTRY_CODE:CN}") String defaultFromCountryCode,
+                                @Value("${CJ_LOGISTIC_NAME:}") String defaultLogisticName) {
         this.rest = builder.baseUrl(BASE).build();
         this.mapper = mapper;
         this.enabled = enabled;
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         String p = orderCreatePath == null ? "/shopping/order/createOrderV2" : orderCreatePath.trim();
         this.orderCreatePath = p.startsWith("/") ? p : ("/" + p);
+        String from = defaultFromCountryCode == null ? "CN" : defaultFromCountryCode.trim();
+        this.defaultFromCountryCode = from.isBlank() ? "CN" : from.toUpperCase(Locale.ROOT);
+        this.defaultLogisticName = defaultLogisticName == null ? "" : defaultLogisticName.trim();
     }
 
     public boolean isConfigured() { return enabled && !apiKey.isBlank(); }
@@ -183,11 +190,17 @@ public class CjDropshippingClient {
         body.put("shippingPhone", nz(req.shippingPhone()));
         body.put("shippingZip", nz(req.shippingZip()));
         if (req.email() != null && !req.email().isBlank()) body.put("email", req.email().trim());
-        if (req.remark() != null && !req.remark().isBlank()) body.put("remark", req.remark().trim());
-        if (req.logisticName() != null && !req.logisticName().isBlank()) body.put("logisticName", req.logisticName().trim());
-        if (req.fromCountryCode() != null && !req.fromCountryCode().isBlank()) body.put("fromCountryCode", req.fromCountryCode().trim());
+        String remark = nz(req.remark());
+        if (!remark.isBlank()) body.put("remark", remark);
+        String logistic = nz(req.logisticName());
+        if (logistic.isBlank()) logistic = nz(defaultLogisticName);
+        if (!logistic.isBlank()) body.put("logisticName", logistic);
+        String fromCountry = nz(req.fromCountryCode());
+        if (fromCountry.isBlank()) fromCountry = nz(defaultFromCountryCode);
+        if (fromCountry.isBlank()) fromCountry = "CN";
+        body.put("fromCountryCode", fromCountry.toUpperCase(Locale.ROOT));
         body.put("products", req.products().stream().map(p -> Map.of("vid", p.vid().trim(), "quantity", p.quantity())).toList());
-        if (req.fromCountryCode() != null && !req.fromCountryCode().isBlank()) body.put("storageId", req.fromCountryCode().trim()); // some CJ variants use warehouse/storage hints; harmless if ignored
+        body.put("storageId", fromCountry.toUpperCase(Locale.ROOT)); // some CJ variants expect warehouse/storage hint
         // Official CJ shopping order create endpoint (API v2.0). Path configurable via CJ_ORDER_CREATE_PATH. Uses merchant orderNumber.
         JsonNode root = post(orderCreatePath, body, token);
         JsonNode data = root.path("data");
