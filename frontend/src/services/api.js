@@ -20,6 +20,7 @@ export function clearTokens() {
 }
 
 export function getAccessToken() { return accessToken; }
+export function getRefreshToken() { return refreshToken; }
 
 function makeError(response, data) {
   const err = new Error(data?.error?.message || response.statusText || 'Request failed');
@@ -28,11 +29,12 @@ function makeError(response, data) {
 }
 
 async function doRefresh() {
-  if (!refreshToken) throw new Error('No refresh token');
+  const tokenToUse = refreshToken || localStorage.getItem('fetch_refresh_token');
+  if (!tokenToUse) throw new Error('No refresh token');
   const res = await fetch(`${baseURL}/auth/refresh`, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refreshToken }),
+    body: JSON.stringify({ refreshToken: tokenToUse }),
   });
   const text = await res.text();
   let data = null;
@@ -40,6 +42,11 @@ async function doRefresh() {
   if (!res.ok) throw makeError(res, data);
   setTokens(data);
   return data;
+}
+
+export async function refreshSession() {
+  if (!refreshPromise) refreshPromise = doRefresh().finally(() => { refreshPromise = null; });
+  return refreshPromise;
 }
 
 async function request(method, url, body, config = {}, retry = true) {
@@ -55,10 +62,9 @@ async function request(method, url, body, config = {}, retry = true) {
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = text; }
   if (res.ok) return { data, status: res.status };
-  if (apiEnabled && res.status === 401 && retry && refreshToken && !String(url).includes('/auth/')) {
+  if (apiEnabled && res.status === 401 && retry && (refreshToken || localStorage.getItem('fetch_refresh_token')) && !String(url).includes('/auth/')) {
     try {
-      if (!refreshPromise) refreshPromise = doRefresh().finally(() => { refreshPromise = null; });
-      await refreshPromise;
+      await refreshSession();
       return request(method, url, body, config, false);
     } catch (e) {
       clearTokens();

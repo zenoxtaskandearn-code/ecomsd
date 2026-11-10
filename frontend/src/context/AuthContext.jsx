@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { apiEnabled, clearTokens, setTokens } from '../services/api.js';
+import { apiEnabled, clearTokens, setTokens, refreshSession } from '../services/api.js';
 import * as authApi from '../services/authApi.js';
 
 const AuthContext = createContext(null);
@@ -18,14 +18,14 @@ export function AuthProvider({ children }) {
     let mounted = true;
     (async () => {
       try {
-        const refreshToken = localStorage.getItem('fetch_refresh_token');
-        if (refreshToken) {
-          const data = await authApi.refresh({ refreshToken });
-          setTokens(data);
+        const stored = localStorage.getItem('fetch_refresh_token');
+        if (stored) {
+          const data = await refreshSession();
           if (mounted) setUser(data.user);
         }
       } catch {
         clearTokens();
+        if (mounted) setUser(null);
       } finally {
         if (mounted) setHydrating(false);
       }

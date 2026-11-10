@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
 
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,7 +32,9 @@ public class AdminOrderController {
 
     @GetMapping
     public List<Order> list(@RequestParam(required = false) String fulfillment) {
-        List<Order> all = orderRepository.findAll();
+        List<Order> all = orderRepository.findAll().stream()
+                .sorted(Comparator.comparing(Order::getId, Comparator.nullsLast(Comparator.reverseOrder())))
+                .toList();
         if (fulfillment == null || fulfillment.isBlank()) return all;
         String f = fulfillment.trim().toUpperCase();
         return all.stream().filter(o -> switch (f) {

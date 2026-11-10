@@ -16,6 +16,7 @@ import com.fetch.backend.payment.entity.Shipment;
 import com.fetch.backend.payment.repo.ShipmentRepository;
 import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -121,15 +122,11 @@ public class CjFulfillmentService {
             try { syncInternal(order); } catch (Exception ignored) {}
             return detailMap(orderRepository.findByOrderNumber(orderNumber).orElse(order));
         } catch (BadRequestException e) {
-            order.setCjLastError(e.getMessage());
-            order.setCjLastSyncAt(Instant.now());
-            orderRepository.save(order);
+            self().recordFailure(order.getId(), e.getMessage());
             throw e;
         } catch (Exception e) {
             String msg = "CJ order submission failed: " + (e.getMessage() == null ? "unknown error" : e.getMessage());
-            order.setCjLastError(msg.length() > 2000 ? msg.substring(0, 2000) : msg);
-            order.setCjLastSyncAt(Instant.now());
-            orderRepository.save(order);
+            self().recordFailure(order.getId(), msg.length() > 2000 ? msg.substring(0, 2000) : msg);
             throw new BadRequestException(msg);
         }
     }
@@ -143,15 +140,12 @@ public class CjFulfillmentService {
             syncInternal(order);
             order.setCjLastError(null);
         } catch (BadRequestException e) {
-            order.setCjLastError(e.getMessage());
-            order.setCjLastSyncAt(Instant.now());
-            orderRepository.save(order);
+            self().recordFailure(order.getId(), e.getMessage());
             throw e;
         } catch (Exception e) {
-            order.setCjLastError("CJ sync failed: " + safeMsg(e.getMessage()));
-            order.setCjLastSyncAt(Instant.now());
-            orderRepository.save(order);
-            throw new BadRequestException(order.getCjLastError());
+            String msg = "CJ sync failed: " + safeMsg(e.getMessage());
+            self().recordFailure(order.getId(), msg);
+            throw new BadRequestException(msg);
         }
         return detailMap(orderRepository.findByOrderNumber(orderNumber).orElse(order));
     }
@@ -185,12 +179,23 @@ public class CjFulfillmentService {
             syncInternal(order);
             order.setCjLastError(null);
         } catch (Exception e) {
-            order.setCjLastError("CJ sync failed: " + safeMsg(e.getMessage()));
-            order.setCjLastSyncAt(Instant.now());
-            orderRepository.save(order);
-            throw e instanceof RuntimeException re ? re : new BadRequestException(order.getCjLastError());
+            String msg = "CJ sync failed: " + safeMsg(e.getMessage());
+            self().recordFailure(order.getId(), msg);
+            throw e instanceof RuntimeException re ? re : new BadRequestException(msg);
         }
     }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordFailure(Long orderId, String error) {
+        if (orderId == null) return;
+        orderRepository.findById(orderId).ifPresent(o -> {
+            o.setCjLastError(error == null ? null : (error.length() > 2000 ? error.substring(0, 2000) : error));
+            o.setCjLastSyncAt(Instant.now());
+            orderRepository.save(o);
+        });
+    }
+
+    private CjFulfillmentService self() { return applicationContext.getBean(CjFulfillmentService.class); }
 
     public Map<String, Object> detailMap(Order order) {
         Map<String, Object> m = new LinkedHashMap<>();
