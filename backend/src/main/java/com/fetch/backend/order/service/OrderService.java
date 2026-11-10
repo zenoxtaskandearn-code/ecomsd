@@ -178,15 +178,30 @@ public class OrderService {
                 || (order.getCjSubmittedAt() != null);
         String supplierName = hasCj ? "CJdropshipping" : "Fulfillment partner";
         String supplierOrderId = order.getCjOrderNumber() != null && !order.getCjOrderNumber().isBlank() ? order.getCjOrderNumber() : order.getCjOrderId();
-        String fulfillmentStatus = order.getCjFulfillmentStatus();
+        String fulfillmentStatus = deriveCustomerFulfillmentStatus(order, hasCj);
         Instant lastUpdated = order.getCjLastSyncAt() != null ? order.getCjLastSyncAt() : (order.getUpdatedAt() != null ? order.getUpdatedAt() : order.getPlacedAt());
         String expected = estimateDelivery(order, shipEntities, deliveredEntityAt);
         String msg = fulfillmentMessage(order, shipEntities, hasCj);
-        // expose non-sensitive CJ errors as status context; keep empty if none
-        String err = order.getCjLastError();
-        if (err != null && err.length() > 280) err = err.substring(0, 280) + "…";
+        // Do not expose internal supplier/system error details to customers.
+        String err = null;
+        if (order.getCjLastError() != null && !order.getCjLastError().isBlank() && !"DELIVERED".equalsIgnoreCase(nz(order.getStatus()))) {
+            // Keep customer note generic; admin views expose raw CJ error.
+            err = "We're preparing your order for fulfillment. If there is a delay, our team will review and update your order shortly.";
+        }
         return new OrderDtos.FulfillmentInfo(supplierName, fulfillmentStatus, supplierOrderId,
                 fmt(order.getCjSubmittedAt()), fmt(lastUpdated), expected, msg, err);
+    }
+
+    private String deriveCustomerFulfillmentStatus(Order order, boolean hasCj) {
+        String st = nz(order.getStatus()).toUpperCase(Locale.ROOT);
+        String fs = nz(order.getFulfillmentStatus()).toUpperCase(Locale.ROOT);
+        if ("DELIVERED".equals(st) || "DELIVERED".equals(fs)) return "DELIVERED";
+        if ("SHIPPED".equals(st) || "SHIPPED".equals(fs) || "IN_TRANSIT".equals(fs)) return "SHIPPED";
+        if (hasCj || "FULFILLMENT_SUBMITTED".equals(st) || "SUBMITTED".equals(fs)) return "PROCESSING";
+        if (Set.of("PAID","PROCESSING","AWAITING_FULFILMENT").contains(st) || "CAPTURED".equals(nz(order.getPaymentStatus()).toUpperCase(Locale.ROOT))) return "PROCESSING";
+        if ("PENDING_PAYMENT".equals(st) || "PAYMENT_FAILED".equals(st)) return "PENDING";
+        if ("CANCELLED".equals(st) || "REFUNDED".equals(st)) return st;
+        return fs.isBlank() ? "PROCESSING" : fs;
     }
 
     private String fulfillmentMessage(Order order, List<com.fetch.backend.payment.entity.Shipment> shipEntities, boolean hasCj) {
