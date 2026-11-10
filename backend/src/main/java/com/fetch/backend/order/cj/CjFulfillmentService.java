@@ -58,17 +58,21 @@ public class CjFulfillmentService {
     public Map<String, Object> submitOrderToCj(String orderNumber, boolean allowPendingPayment, CjSubmitOptions options) {
         Order order = orderRepository.findByOrderNumber(orderNumber).orElseThrow(() -> new NotFoundException("Order not found"));
         if (!cj.isConfigured()) throw new BadRequestException("CJdropshipping API is not configured. Set CJ_API_ENABLED=true and CJ_API_KEY.");
+        // Idempotency/race guard: if already submitted, never submit again.
         if (order.getCjOrderId() != null && !order.getCjOrderId().isBlank()) {
-            // idempotent: already submitted; sync latest
-            syncOrderFromCj(orderNumber);
+            try { syncOrderFromCj(orderNumber); } catch (Exception ignored) {}
             return detailMap(orderRepository.findByOrderNumber(orderNumber).orElse(order));
         }
         String status = nz(order.getStatus()).toUpperCase(Locale.ROOT);
+        // Safety: never fulfill unpaid/cancelled/refunded orders via standard flow.
+        if (Set.of("CANCELLED", "REFUNDED").contains(status)) {
+            throw new BadRequestException("Cannot submit a " + status.toLowerCase(Locale.ROOT) + " order to CJ.");
+        }
         Set<String> allowed = allowPendingPayment
                 ? Set.of("PENDING_PAYMENT", "PAID", "PROCESSING", "FULFILLMENT_SUBMITTED", "PAYMENT_FAILED")
                 : Set.of("PAID", "PROCESSING", "FULFILLMENT_SUBMITTED");
         if (!allowed.contains(status)) {
-            throw new BadRequestException("Order cannot be submitted to CJ in status " + order.getStatus() + (allowPendingPayment ? "." : ". Wait for payment confirmation (PAID) or submit manually when ready."));
+            throw new BadRequestException("Order cannot be submitted to CJ in status " + order.getStatus() + (allowPendingPayment ? "." : ". Wait for server-confirmed payment (PAID) or submit manually after review."));
         }
         List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
         if (items.isEmpty()) throw new BadRequestException("Order has no items.");

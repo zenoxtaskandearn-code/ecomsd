@@ -60,7 +60,7 @@ services:
       - key: CJ_WEBHOOK_SECRET
         value: ""
       - key: CJ_AUTO_SUBMIT_ON_PAID
-        value: "true"
+        value: "false"
       - key: CJ_AUTO_SUBMIT_ON_CREATE
         value: "false"
       - key: CJ_FULFILLMENT_SYNC_ENABLED

@@ -17,11 +17,11 @@ public class CjAutoSubmitter {
     private final boolean submitOnCreate;
 
     public CjAutoSubmitter(CjFulfillmentService fulfillmentService, CjDropshippingClient cj,
-                           @Value("${CJ_AUTO_SUBMIT_ON_PAID:true}") boolean submitOnPaid,
+                           @Value("${CJ_AUTO_SUBMIT_ON_PAID:false}") boolean submitOnPaid,
                            @Value("${CJ_AUTO_SUBMIT_ON_CREATE:false}") boolean submitOnCreate) {
         this.fulfillmentService = fulfillmentService;
         this.cj = cj;
-        this.submitOnPaid = submitOnPaid;
+        this.submitOnPaid = submitOnPaid; // MANUAL_APPROVAL default: auto-submit disabled unless explicitly enabled
         this.submitOnCreate = submitOnCreate;
     }
 
