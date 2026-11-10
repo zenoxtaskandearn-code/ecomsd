@@ -1,18 +1,22 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ProductMarquee from '../products/ProductMarquee.jsx';
-import { featuredWalkEssentials } from '../../utils/products.js';
 import { listProducts } from '../../services/catalogApi.js';
 
 export default function FeaturedCollection() {
-  const [items, setItems] = useState(featuredWalkEssentials);
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
         const res = await listProducts({ category: 'walking-kits', size: 8 });
-        if (mounted && res?.content?.length) setItems(res.content.slice(0, 4));
-      } catch {}
+        if (mounted) setItems((res?.content || []).slice(0, 4));
+      } catch {
+        if (mounted) setItems([]);
+      } finally {
+        if (mounted) setLoading(false);
+      }
     })();
     return () => { mounted = false; };
   }, []);
@@ -29,7 +33,17 @@ export default function FeaturedCollection() {
           <Link to="/shop" className="inline-flex w-fit items-center text-[14px] font-medium text-fetch-ink/75 underline decoration-fetch-ink/15 underline-offset-[5px] transition duration-300 hover:text-fetch-ink hover:decoration-fetch-ink/40">View all essentials</Link>
         </div>
       </div>
-      <div className="section-container"><ProductMarquee products={items} duration="42s" /></div>
+      <div className="section-container">
+        {loading ? (
+          <div className="flex min-h-[220px] items-center justify-center">
+            <span className="h-10 w-10 animate-spin rounded-full border-[3px] border-fetch-ink/10 border-t-fetch-ink" aria-label="Loading products" />
+          </div>
+        ) : items.length > 0 ? (
+          <ProductMarquee products={items} duration="42s" />
+        ) : (
+          <div className="border border-fetch-ink/[0.08] bg-white/70 px-6 py-10 text-center text-[14px] text-fetch-muted">No products available right now. Check back soon.</div>
+        )}
+      </div>
     </section>
   );
 }

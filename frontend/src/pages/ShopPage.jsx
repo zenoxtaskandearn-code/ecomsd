@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { SlidersHorizontal, X } from 'lucide-react';
+import { Loader2, SlidersHorizontal, X } from 'lucide-react';
 import StoreLayout from '../components/layout/StoreLayout.jsx';
 import ProductGrid from '../components/products/ProductGrid.jsx';
 import ShopSidebar from '../components/shop/ShopSidebar.jsx';
-import { ProductGridSkeleton } from '../components/ui/Skeleton.jsx';
 import { EmptyState, ErrorState } from '../components/ui/StatePanel.jsx';
 import { listCategories, listProducts } from '../services/catalogApi.js';
 
@@ -102,7 +101,23 @@ export default function ShopPage() {
                 </select>
               </label>
             </div>
-            {error ? <ErrorState message={error} onAction={() => load()} /> : loading ? <ProductGridSkeleton count={8} columns={3} /> : filtered.length === 0 ? <EmptyState title="No products match these filters" message="Try a different category or availability option to see more essentials." actionLabel="Clear filters" onAction={clearFilters} /> : <ProductGrid products={filtered} columns={3} />}
+            {error ? (
+              <ErrorState message={error} onAction={() => load()} />
+            ) : loading ? (
+              <div className="flex min-h-[420px] flex-col items-center justify-center py-16" role="status" aria-live="polite" aria-label="Loading products">
+                <div className="relative flex h-16 w-16 items-center justify-center">
+                  <span className="absolute inset-0 rounded-full border-[3px] border-fetch-ink/10" />
+                  <span className="absolute inset-0 animate-spin rounded-full border-[3px] border-transparent border-t-fetch-ink border-r-fetch-ink/60" />
+                  <Loader2 className="h-6 w-6 animate-spin text-fetch-ink/70" aria-hidden="true" />
+                </div>
+                <p className="mt-5 text-[14px] font-medium text-fetch-ink">Loading products</p>
+                <p className="mt-1 text-[13px] text-fetch-muted">Fetching the latest essentials for you…</p>
+              </div>
+            ) : filtered.length === 0 ? (
+              <EmptyState title="No products match these filters" message="Try a different category or availability option to see more essentials." actionLabel="Clear filters" onAction={clearFilters} />
+            ) : (
+              <ProductGrid products={filtered} columns={3} />
+            )}
           </section>
         </div>
       </div>

@@ -11,4 +11,6 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     List<Order> findByUserIdOrderByCreatedAtDesc(Long userId);
     List<Order> findByCjOrderIdIsNotNullAndStatusNotIn(java.util.Collection<String> statuses);
     Optional<Order> findByCjOrderId(String cjOrderId);
+    Optional<Order> findByTrackingAccessToken(String trackingAccessToken);
+    Optional<Order> findByUserIdAndCheckoutIdempotencyKey(Long userId, String checkoutIdempotencyKey);
 }

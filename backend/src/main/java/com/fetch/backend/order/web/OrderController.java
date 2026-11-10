@@ -24,4 +24,9 @@ public class OrderController {
 
     @GetMapping("/{orderNumber}")
     public OrderDtos.OrderResponse get(@PathVariable String orderNumber) { return orderService.myOrder(orderNumber); }
+
+    @PostMapping("/track")
+    public OrderDtos.OrderResponse track(@Valid @RequestBody OrderDtos.TrackOrderRequest request) {
+        return orderService.trackOrder(request.orderNumber(), request.trackingToken());
+    }
 }

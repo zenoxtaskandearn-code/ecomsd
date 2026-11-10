@@ -58,6 +58,20 @@ public class Order {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "cj_raw_snapshot", columnDefinition = "jsonb")
     private String cjRawSnapshot;
+    @Column(name = "checkout_idempotency_key", length = 80)
+    private String checkoutIdempotencyKey;
+    @Column(name = "tracking_access_token", length = 80)
+    private String trackingAccessToken;
+    @Column(name = "review_required", nullable = false)
+    private boolean reviewRequired = false;
+    @Column(name = "review_reason", columnDefinition = "TEXT")
+    private String reviewReason;
+    @Column(name = "customer_tax_amount", nullable = false, precision = 12, scale = 2)
+    private BigDecimal customerTaxAmount = BigDecimal.ZERO;
+    @Column(name = "customer_fee_amount", nullable = false, precision = 12, scale = 2)
+    private BigDecimal customerFeeAmount = BigDecimal.ZERO;
+    @Column(name = "refund_total_amount", nullable = false, precision = 12, scale = 2)
+    private BigDecimal refundTotalAmount = BigDecimal.ZERO;
     @Column(name = "placed_at") private Instant placedAt;
     @Column(name = "paid_at") private Instant paidAt;
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
@@ -111,6 +125,20 @@ public class Order {
     public void setCjLastError(String cjLastError) { this.cjLastError = cjLastError; }
     public String getCjRawSnapshot() { return cjRawSnapshot; }
     public void setCjRawSnapshot(String cjRawSnapshot) { this.cjRawSnapshot = cjRawSnapshot; }
+    public String getCheckoutIdempotencyKey() { return checkoutIdempotencyKey; }
+    public void setCheckoutIdempotencyKey(String checkoutIdempotencyKey) { this.checkoutIdempotencyKey = checkoutIdempotencyKey; }
+    public String getTrackingAccessToken() { return trackingAccessToken; }
+    public void setTrackingAccessToken(String trackingAccessToken) { this.trackingAccessToken = trackingAccessToken; }
+    public boolean isReviewRequired() { return reviewRequired; }
+    public void setReviewRequired(boolean reviewRequired) { this.reviewRequired = reviewRequired; }
+    public String getReviewReason() { return reviewReason; }
+    public void setReviewReason(String reviewReason) { this.reviewReason = reviewReason; }
+    public BigDecimal getCustomerTaxAmount() { return customerTaxAmount; }
+    public void setCustomerTaxAmount(BigDecimal customerTaxAmount) { this.customerTaxAmount = customerTaxAmount == null ? BigDecimal.ZERO : customerTaxAmount; }
+    public BigDecimal getCustomerFeeAmount() { return customerFeeAmount; }
+    public void setCustomerFeeAmount(BigDecimal customerFeeAmount) { this.customerFeeAmount = customerFeeAmount == null ? BigDecimal.ZERO : customerFeeAmount; }
+    public BigDecimal getRefundTotalAmount() { return refundTotalAmount; }
+    public void setRefundTotalAmount(BigDecimal refundTotalAmount) { this.refundTotalAmount = refundTotalAmount == null ? BigDecimal.ZERO : refundTotalAmount; }
     public Instant getPlacedAt() { return placedAt; }
     public void setPlacedAt(Instant placedAt) { this.placedAt = placedAt; }
     public Instant getPaidAt() { return paidAt; }

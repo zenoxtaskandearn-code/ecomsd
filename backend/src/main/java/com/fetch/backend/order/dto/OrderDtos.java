@@ -42,5 +42,6 @@ public class OrderDtos {
                                 String placedAt, String paidAt, Map<String, Object> shippingAddress, List<OrderItemResponse> items,
                                 List<ShipmentResponse> shipments, List<TimelineEvent> timeline, FulfillmentInfo fulfillment) {}
 
-    public record CreateOrderRequest(@Valid @NotNull AddressSnapshot shippingAddress, @Valid AddressSnapshot billingAddress, String customerEmail) {}
+    public record CreateOrderRequest(@Valid @NotNull AddressSnapshot shippingAddress, @Valid AddressSnapshot billingAddress, String customerEmail, String idempotencyKey) {}
+    public record TrackOrderRequest(@NotBlank String orderNumber, @NotBlank String trackingToken) {}
 }

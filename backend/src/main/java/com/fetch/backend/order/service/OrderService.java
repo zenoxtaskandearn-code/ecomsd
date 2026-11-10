@@ -16,12 +16,15 @@ import com.fetch.backend.order.repo.OrderItemRepository;
 import com.fetch.backend.order.repo.OrderRepository;
 import com.fetch.backend.payment.repo.ShipmentRepository;
 import com.fetch.backend.order.cj.CjAutoSubmitter;
+import com.fetch.backend.common.service.AuditLogService;
+import com.fetch.backend.common.service.NotificationService;
 import com.fetch.backend.user.service.UserService;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.*;
 
@@ -37,13 +40,19 @@ public class OrderService {
     private final ObjectMapper objectMapper;
     private final CjAutoSubmitter cjAutoSubmitter;
     private final OrderStatusService orderStatusService;
+    private final OrderCostService orderCostService;
+    private final AuditLogService auditLogService;
+    private final NotificationService notificationService;
+    private static final SecureRandom RNG = new SecureRandom();
 
     public OrderService(OrderRepository orderRepository, OrderItemRepository orderItemRepository, CartRepository cartRepository,
                         CartItemRepository cartItemRepository, ProductVariantRepository variantRepository, ShipmentRepository shipmentRepository, UserService userService, ObjectMapper objectMapper,
-                        CjAutoSubmitter cjAutoSubmitter, OrderStatusService orderStatusService) {
+                        CjAutoSubmitter cjAutoSubmitter, OrderStatusService orderStatusService, OrderCostService orderCostService,
+                        AuditLogService auditLogService, NotificationService notificationService) {
         this.orderRepository = orderRepository; this.orderItemRepository = orderItemRepository; this.cartRepository = cartRepository;
         this.cartItemRepository = cartItemRepository; this.variantRepository = variantRepository; this.shipmentRepository = shipmentRepository; this.userService = userService; this.objectMapper = objectMapper;
-        this.cjAutoSubmitter = cjAutoSubmitter; this.orderStatusService = orderStatusService;
+        this.cjAutoSubmitter = cjAutoSubmitter; this.orderStatusService = orderStatusService; this.orderCostService = orderCostService;
+        this.auditLogService = auditLogService; this.notificationService = notificationService;
     }
 
     @Transactional(readOnly = true)
@@ -76,6 +85,14 @@ public class OrderService {
     @Transactional
     public OrderDtos.OrderResponse createFromCart(OrderDtos.CreateOrderRequest request) {
         var user = userService.currentUser();
+        String idem = request.idempotencyKey() == null ? null : request.idempotencyKey().trim();
+        if (idem != null && !idem.isBlank()) {
+            var existing = orderRepository.findByUserIdAndCheckoutIdempotencyKey(user.getId(), idem);
+            if (existing.isPresent()) {
+                Order o = existing.get();
+                return toResponse(o, orderItemRepository.findByOrderId(o.getId()));
+            }
+        }
         var cart = cartRepository.findByUserIdAndStatus(user.getId(), "ACTIVE").orElseThrow(() -> new BadRequestException("Cart is empty"));
         List<CartItem> items = cartItemRepository.findByCartId(cart.getId());
         if (items.isEmpty()) throw new BadRequestException("Cart is empty");
@@ -93,6 +110,8 @@ public class OrderService {
                 order.setShippingAddressSnapshot(writeJson(request.shippingAddress()));
                 order.setBillingAddressSnapshot(request.billingAddress() == null ? null : writeJson(request.billingAddress()));
                 order.setPlacedAt(Instant.now());
+                if (idem != null && !idem.isBlank()) order.setCheckoutIdempotencyKey(idem.length() > 80 ? idem.substring(0, 80) : idem);
+                order.setTrackingAccessToken(generateTrackingToken());
 
                 BigDecimal subtotal = BigDecimal.ZERO;
                 List<OrderItem> orderItems = new ArrayList<>();
@@ -121,6 +140,9 @@ public class OrderService {
                 orderStatusService.record(order.getId(), "ORDER", null, "PENDING_PAYMENT", "SYSTEM", "Order created, awaiting payment");
                 orderStatusService.record(order.getId(), "PAYMENT", null, "PENDING", "SYSTEM", "Payment pending");
                 orderStatusService.record(order.getId(), "FULFILLMENT", null, "PENDING", "SYSTEM", "Fulfillment pending payment");
+                try { if (orderCostService != null) orderCostService.upsertForOrder(order); } catch (Exception ignored) {}
+                try { if (auditLogService != null) auditLogService.record("CUSTOMER", String.valueOf(user.getId()), "ORDER_CREATED", "Order", String.valueOf(order.getId()), order.getId(), "INFO", Map.of("orderNumber", order.getOrderNumber()), null); } catch (Exception ignored) {}
+                try { if (notificationService != null) notificationService.enqueue("ORDER_CONFIRMATION", "EMAIL", order.getCustomerEmail(), "Order confirmation " + order.getOrderNumber(), order.getId(), user.getId(), Map.of("orderNumber", order.getOrderNumber(), "total", order.getTotalAmount()), "order:" + order.getId() + ":confirm"); } catch (Exception ignored) {}
 
                 cart.setStatus("CONVERTED");
                 cartRepository.save(cart);
@@ -144,6 +166,16 @@ public class OrderService {
     public OrderDtos.OrderResponse myOrder(String orderNumber) {
         var user = userService.currentUser();
         Order order = orderRepository.findByOrderNumberAndUserId(orderNumber, user.getId()).orElseThrow(() -> new NotFoundException("Order not found"));
+        return toResponse(order, orderItemRepository.findByOrderId(order.getId()));
+    }
+
+    @Transactional(readOnly = true)
+    public OrderDtos.OrderResponse trackOrder(String orderNumber, String trackingToken) {
+        if (trackingToken == null || trackingToken.isBlank()) throw new NotFoundException("Order not found");
+        Order order = orderRepository.findByOrderNumber(orderNumber).orElseThrow(() -> new NotFoundException("Order not found"));
+        if (order.getTrackingAccessToken() == null || !order.getTrackingAccessToken().equals(trackingToken.trim())) {
+            throw new NotFoundException("Order not found");
+        }
         return toResponse(order, orderItemRepository.findByOrderId(order.getId()));
     }
 
@@ -283,7 +315,15 @@ public class OrderService {
     private static String nz(String s) { return s == null ? "" : s; }
 
     private String generateOrderNumber() {
-        return "FT-" + (100000 + new Random().nextInt(900000));
+        return "FT-" + (100000 + RNG.nextInt(900000));
+    }
+
+    private String generateTrackingToken() {
+        byte[] b = new byte[24];
+        RNG.nextBytes(b);
+        StringBuilder sb = new StringBuilder(b.length * 2);
+        for (byte x : b) sb.append(String.format("%02x", x));
+        return sb.toString();
     }
 
     public com.fetch.backend.order.entity.Order getOrderEntity(String orderNumber) {
