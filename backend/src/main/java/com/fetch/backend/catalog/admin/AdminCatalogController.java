@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -93,6 +94,118 @@ public class AdminCatalogController {
 
     @DeleteMapping("/images/{imageId}")
     public void deleteImage(@PathVariable Long imageId) { imageRepository.deleteById(imageId); }
+
+    @PostMapping("/products/auto-pricing")
+    @Transactional
+    public Map<String, Object> autoPricing(@RequestBody Map<String, Object> body) {
+        BigDecimal markupPercent = toBig(body.get("markupPercent")); // increase selling price by %
+        BigDecimal marginPercent = toBig(body.get("marginPercent")); // set selling price from (cost+shipping)/(1-margin%) when costs known
+        BigDecimal fulfillmentShippingCost = toBig(body.get("fulfillmentShippingCost")); // default fulfillment shipping cost (your cost) to set when missing
+        BigDecimal supplierCost = toBig(body.get("supplierCost")); // optional default supplier cost to set when missing (use carefully)
+        Boolean onlyMissingShippingCost = body.get("onlyMissingShippingCost") == null ? Boolean.TRUE : Boolean.valueOf(String.valueOf(body.get("onlyMissingShippingCost")));
+        Boolean onlyMissingSupplierCost = body.get("onlyMissingSupplierCost") == null ? Boolean.TRUE : Boolean.valueOf(String.valueOf(body.get("onlyMissingSupplierCost")));
+        Boolean updateProductBasePrice = body.get("updateProductBasePrice") == null ? Boolean.TRUE : Boolean.valueOf(String.valueOf(body.get("updateProductBasePrice")));
+
+        if ((markupPercent == null || markupPercent.compareTo(BigDecimal.ZERO) == 0)
+                && (marginPercent == null || marginPercent.compareTo(BigDecimal.ZERO) == 0)
+                && fulfillmentShippingCost == null && supplierCost == null) {
+            throw new com.fetch.backend.common.error.BadRequestException("Provide at least one pricing action (markupPercent, marginPercent, fulfillmentShippingCost, or supplierCost).");
+        }
+        if (marginPercent != null && (marginPercent.compareTo(BigDecimal.ZERO) < 0 || marginPercent.compareTo(new BigDecimal("95")) >= 0)) {
+            throw new com.fetch.backend.common.error.BadRequestException("marginPercent must be between 0 and < 95.");
+        }
+
+        List<Product> products = productRepository.findAll();
+        int variantsUpdated = 0;
+        int productsUpdated = 0;
+        int pricesChanged = 0;
+        int costsSet = 0;
+
+        for (Product p : products) {
+            boolean productChanged = false;
+            List<ProductVariant> vars = variantRepository.findByProductId(p.getId());
+            for (ProductVariant v : vars) {
+                boolean changed = false;
+
+                // set default fulfillment (your) shipping cost for profit tracking when missing
+                if (fulfillmentShippingCost != null && fulfillmentShippingCost.compareTo(BigDecimal.ZERO) >= 0) {
+                    if (!Boolean.TRUE.equals(onlyMissingShippingCost) || v.getShippingCostAmount() == null) {
+                        if (!eqMoney(v.getShippingCostAmount(), fulfillmentShippingCost)) { v.setShippingCostAmount(fulfillmentShippingCost); changed = true; costsSet++; }
+                    }
+                }
+                // optional default supplier cost when missing (admin-provided assumption)
+                if (supplierCost != null && supplierCost.compareTo(BigDecimal.ZERO) >= 0) {
+                    if (!Boolean.TRUE.equals(onlyMissingSupplierCost) || v.getSupplierCostAmount() == null) {
+                        if (!eqMoney(v.getSupplierCostAmount(), supplierCost)) { v.setSupplierCostAmount(supplierCost); changed = true; costsSet++; }
+                    }
+                }
+
+                BigDecimal newPrice = v.getPriceAmount();
+                // 1) margin-based pricing when costs known: price = (supplier + fulfillmentShipping) / (1 - margin)
+                if (marginPercent != null && marginPercent.compareTo(BigDecimal.ZERO) > 0
+                        && v.getSupplierCostAmount() != null) {
+                    BigDecimal ship = v.getShippingCostAmount() != null ? v.getShippingCostAmount() : BigDecimal.ZERO;
+                    BigDecimal totalCost = v.getSupplierCostAmount().add(ship);
+                    BigDecimal denom = BigDecimal.ONE.subtract(marginPercent.divide(new BigDecimal("100"), 6, RoundingMode.HALF_UP));
+                    if (denom.compareTo(new BigDecimal("0.05")) > 0) {
+                        newPrice = totalCost.divide(denom, 2, RoundingMode.HALF_UP);
+                    }
+                }
+                // 2) markup on selling price (can stack as simple increase when requested explicitly)
+                if (markupPercent != null && markupPercent.compareTo(BigDecimal.ZERO) != 0) {
+                    BigDecimal base = newPrice != null ? newPrice : v.getPriceAmount();
+                    if (base != null) {
+                        newPrice = base.multiply(BigDecimal.ONE.add(markupPercent.divide(new BigDecimal("100"), 6, RoundingMode.HALF_UP))).setScale(2, RoundingMode.HALF_UP);
+                    }
+                }
+
+                if (newPrice != null && newPrice.compareTo(BigDecimal.ZERO) > 0 && !eqMoney(newPrice, v.getPriceAmount())) {
+                    v.setPriceAmount(newPrice);
+                    changed = true;
+                    pricesChanged++;
+                }
+
+                if (changed) { variantRepository.save(v); variantsUpdated++; productChanged = true; }
+            }
+
+            if (Boolean.TRUE.equals(updateProductBasePrice)) {
+                List<ProductVariant> refreshed = variantRepository.findByProductId(p.getId());
+                BigDecimal min = null;
+                for (ProductVariant v : refreshed) {
+                    if (v.getPriceAmount() == null) continue;
+                    if (min == null || v.getPriceAmount().compareTo(min) < 0) min = v.getPriceAmount();
+                }
+                if (min != null && !eqMoney(min, p.getBasePriceAmount())) {
+                    p.setBasePriceAmount(min);
+                    productRepository.save(p);
+                    productsUpdated++;
+                    productChanged = true;
+                }
+            }
+            if (productChanged) { /* counted */ }
+        }
+
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("productsScanned", products.size());
+        res.put("productsUpdated", productsUpdated);
+        res.put("variantsUpdated", variantsUpdated);
+        res.put("pricesChanged", pricesChanged);
+        res.put("costFieldsSet", costsSet);
+        res.put("message", "Auto-pricing applied. Selling prices updated where rules matched. Supplier/fulfillment costs were set only for fields you provided (and missing-only when selected). For accurate profit, set real CJ supplier and fulfillment shipping costs per variant/route.");
+        return res;
+    }
+
+    private static BigDecimal toBig(Object o) {
+        if (o == null) return null;
+        String s = String.valueOf(o).trim();
+        if (s.isEmpty() || "null".equalsIgnoreCase(s)) return null;
+        try { return new BigDecimal(s); } catch (Exception e) { return null; }
+    }
+    private static boolean eqMoney(BigDecimal a, BigDecimal b) {
+        if (a == null && b == null) return true;
+        if (a == null || b == null) return false;
+        return a.setScale(2, RoundingMode.HALF_UP).compareTo(b.setScale(2, RoundingMode.HALF_UP)) == 0;
+    }
 
     private void apply(Category c, CatalogDtos.CategoryRequest req) {
         c.setName(req.name()); c.setSlug(req.slug()); c.setDescription(req.description());

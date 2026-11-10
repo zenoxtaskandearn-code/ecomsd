@@ -29,3 +29,4 @@ export async function saveVariant(productId, payload, variantId) {
 }
 export async function saveImage(productId, payload) { const { data } = await api.post(`/admin/products/${productId}/images`, payload); return data; }
 export async function deleteImage(imageId) { await api.delete(`/admin/images/${imageId}`); }
+export async function applyAutoPricing(payload) { const { data } = await api.post('/admin/products/auto-pricing', payload); return data; }
