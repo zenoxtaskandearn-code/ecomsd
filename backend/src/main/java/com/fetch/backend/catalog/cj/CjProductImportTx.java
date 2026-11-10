@@ -52,7 +52,13 @@ public class CjProductImportTx {
         p.setStatus("ACTIVE");
         p.setCjProductId(blankToNull(item.productId()));
         p.setSupplierSource("CJ_API");
-        if (detail != null && blankToNull(detail.deliveryCycle()) != null) p.setEstimatedDelivery(detail.deliveryCycle().trim() + " days");
+        String delivery = null;
+        if (detail != null && blankToNull(detail.deliveryCycle()) != null) {
+            String dc = detail.deliveryCycle().trim();
+            delivery = dc.toLowerCase(Locale.ROOT).contains("day") ? dc : (dc + " days");
+        }
+        if (delivery == null || delivery.isBlank()) delivery = "7–15 business days";
+        p.setEstimatedDelivery(delivery);
         p = productRepository.save(p);
 
         String productKeyEn = detail != null ? detail.productKeyEn() : null;
