@@ -45,13 +45,16 @@ export default function AccountOrdersPage() {
               {orders.map((order) => {
                 const total = Number(order.total ?? order.totalAmount ?? 0);
                 const date = order.placedAt ? new Date(order.placedAt).toLocaleDateString() : (order.placed || '—');
+                const status = String(order.status || '').replace(/_/g,' ');
+                const fulfillment = order.fulfillment;
+                const hint = fulfillment?.expectedDelivery || (order.shipments?.[0]?.trackingNumber ? `Tracking: ${order.shipments[0].trackingNumber}` : '');
                 return (
-                  <li key={order.orderNumber} className="grid gap-2 px-5 py-4 md:grid-cols-[1.2fr_0.9fr_0.8fr_0.8fr_auto] md:items-center md:gap-4">
-                    <div><p className="text-[15px] font-medium text-fetch-ink">{order.orderNumber}</p><p className="mt-0.5 text-[13px] text-fetch-muted md:hidden">{date} · {order.status}</p></div>
+                  <li key={order.orderNumber} className="grid gap-2 px-5 py-4 md:grid-cols-[1.2fr_0.9fr_0.9fr_0.8fr_auto] md:items-center md:gap-4">
+                    <div><p className="text-[15px] font-medium text-fetch-ink">{order.orderNumber}</p><p className="mt-0.5 text-[13px] text-fetch-muted md:hidden">{date} · {status}</p>{hint && <p className="mt-0.5 text-[12px] text-fetch-muted md:hidden">{hint}</p>}</div>
                     <p className="hidden text-[14px] text-fetch-muted md:block">{date}</p>
-                    <p className="hidden text-[14px] text-fetch-ink/80 md:block">{order.status}</p>
+                    <div className="hidden md:block"><p className="text-[14px] text-fetch-ink/80">{status}</p>{hint && <p className="mt-0.5 text-[12px] text-fetch-muted">{hint}</p>}</div>
                     <p className="text-[14px] font-medium tabular-nums text-fetch-ink">${total.toFixed(2)}</p>
-                    <Link to={`/account/orders/${order.orderNumber}`} className="inline-flex text-[14px] font-medium text-fetch-ink underline decoration-fetch-ink/20 underline-offset-4">Details</Link>
+                    <Link to={`/account/orders/${order.orderNumber}`} className="inline-flex text-[14px] font-medium text-fetch-ink underline decoration-fetch-ink/20 underline-offset-4">Track / Details</Link>
                   </li>
                 );
               })}

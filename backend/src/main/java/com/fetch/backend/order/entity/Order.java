@@ -107,4 +107,6 @@ public class Order {
     public void setPlacedAt(Instant placedAt) { this.placedAt = placedAt; }
     public Instant getPaidAt() { return paidAt; }
     public void setPaidAt(Instant paidAt) { this.paidAt = paidAt; }
+    public Instant getCreatedAt() { return createdAt; }
+    public Instant getUpdatedAt() { return updatedAt; }
 }

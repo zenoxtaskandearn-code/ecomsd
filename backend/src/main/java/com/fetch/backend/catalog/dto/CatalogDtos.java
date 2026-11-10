@@ -9,13 +9,15 @@ public class CatalogDtos {
     public record CategoryRequest(@NotBlank String name, @NotBlank String slug, String description, Boolean active, Integer sortOrder, Long parentId) {}
 
     public record ImageResponse(Long id, String url, String altText, int sortOrder, Long variantId) {}
-    public record VariantResponse(Long id, String sku, String title, BigDecimal priceAmount, String currency, boolean active, String optionValuesJson, String imageUrl) {}
+    public record VariantResponse(Long id, String sku, String title, BigDecimal priceAmount, String currency, boolean active,
+                                   String optionValuesJson, String imageUrl, String stockAvailability, Integer weightGrams, String warehouseInfo) {}
 
     public record ProductSummaryResponse(Long id, String name, String slug, String description, BigDecimal priceAmount, String currency,
                                          String status, String categorySlug, String categoryName, String primaryImageUrl, String variantTitle) {}
 
     public record ProductDetailResponse(Long id, String name, String slug, String description, BigDecimal basePriceAmount, String currency,
-                                        String status, String estimatedDelivery, CategoryResponse category, List<VariantResponse> variants, List<ImageResponse> images) {}
+                                        String status, String estimatedDelivery, CategoryResponse category, List<VariantResponse> variants, List<ImageResponse> images,
+                                        String shippingOptionsJson, String seoTitle, String seoDescription) {}
 
     public record ProductRequest(
             @NotNull Long categoryId,

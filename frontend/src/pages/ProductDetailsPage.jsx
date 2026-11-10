@@ -75,16 +75,36 @@ export default function ProductDetailsPage() {
     return imgs.length ? imgs : (product?.image ? [product.image] : []);
   }, [product]);
   const selectedOptions = useMemo(() => parseOpts(selectedVariant?.optionValuesJson), [selectedVariant]);
+  const shippingNotes = useMemo(() => {
+    if (!product?.shippingOptionsJson) return [];
+    try {
+      const v = JSON.parse(product.shippingOptionsJson);
+      if (Array.isArray(v)) return v.map(String).filter(Boolean);
+      if (v && typeof v === 'object') return Object.entries(v).map(([k,val]) => `${k}: ${typeof val === 'object' ? JSON.stringify(val) : String(val)}`);
+      if (typeof v === 'string' && v.trim()) return [v.trim()];
+    } catch { if (String(product.shippingOptionsJson).trim()) return [String(product.shippingOptionsJson).trim()]; }
+    return [];
+  }, [product]);
   const detailItems = useMemo(() => {
     const items = [];
+    const cat = product?.categoryName || (product?.category ? String(product.category).replace(/-/g,' ') : '');
+    if (cat) items.push(`Category: ${cat}`);
     if (product?.estimatedDelivery) items.push(`Estimated delivery: ${product.estimatedDelivery}`);
     if (selectedVariant?.sku) items.push(`SKU: ${selectedVariant.sku}`);
+    if (selectedVariant?.stockAvailability) items.push(`Availability: ${selectedVariant.stockAvailability}`);
+    if (selectedVariant?.weightGrams) items.push(`Weight: ${selectedVariant.weightGrams} g`);
+    if (selectedVariant?.warehouseInfo) items.push(`Ships from: ${selectedVariant.warehouseInfo}`);
     if (selectedOptions && typeof selectedOptions === 'object') {
       for (const [k, v] of Object.entries(selectedOptions)) { if (v && k !== 'Variant') items.push(`${k}: ${v}`); }
     } else if (selectedVariant?.title) items.push(`Option: ${selectedVariant.title}`);
-    if (product) items.push('Final delivery, taxes, and return eligibility are confirmed at checkout/policy pages.');
+    if (product?.variants?.length) items.push(`Available options: ${product.variants.filter(v=>v.active !== false).length}`);
+    if (gallery.length) items.push(`Images: ${gallery.length}`);
+    if (shippingNotes.length) shippingNotes.forEach((n) => items.push(`Shipping: ${n}`));
+    items.push('Secure checkout with PayPal. Order and payment status are confirmed on our servers.');
+    items.push('Tracking details, carrier info, and delivery updates appear in your account after shipment.');
+    items.push('Final delivery estimates, taxes/duties (if applicable), and return eligibility are shown at checkout and in policy pages.');
     return items;
-  }, [product, selectedVariant, selectedOptions]);
+  }, [product, selectedVariant, selectedOptions, shippingNotes, gallery.length]);
   const mainImage = activeImage || gallery[0] || product?.image || '';
   const canBuy = !!product && product.inStock !== false && (!product.variants?.length || selectedVariant?.active !== false);
 
@@ -143,10 +163,15 @@ export default function ProductDetailsPage() {
             )}
           </div>
           <div className="lg:py-2">
-            <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-fetch-ink/45">{(product.category || '').replace('-', ' ')}</p>
+            <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-fetch-ink/45">{(product.categoryName || product.category || '').replace(/-/g, ' ')}</p>
             <h1 className="mt-3 text-[2.1rem] font-semibold leading-[1.06] tracking-[-0.03em] text-fetch-ink sm:text-[2.55rem]">{product.name}</h1>
-            <p className="mt-3 text-[1.15rem] font-medium tabular-nums text-fetch-ink">${displayPrice.toFixed(2)}</p>
+            <p className="mt-3 text-[1.15rem] font-medium tabular-nums text-fetch-ink">${displayPrice.toFixed(2)} <span className="ml-1 text-[13px] font-normal text-fetch-muted">{product.currency || 'USD'}</span></p>
             {(selectedVariant?.title || product.variant) && <p className="mt-1 text-[14px] text-fetch-muted">{selectedVariant?.title || product.variant}</p>}
+            <div className="mt-3 flex flex-wrap gap-2 text-[12px]">
+              <span className={`inline-flex rounded-full px-2.5 py-1 font-medium ${canBuy ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{canBuy ? 'In stock / available' : 'Currently unavailable'}</span>
+              {selectedVariant?.stockAvailability && <span className="inline-flex rounded-full bg-[#f3f4f6] px-2.5 py-1 text-[#374151]">{selectedVariant.stockAvailability}</span>}
+              {product.estimatedDelivery && <span className="inline-flex rounded-full bg-[#eef2ff] px-2.5 py-1 text-[#3730a3]">Est. delivery: {product.estimatedDelivery}</span>}
+            </div>
 
             {product.variants?.length > 0 && (
               <div className="mt-6">
@@ -225,8 +250,10 @@ export default function ProductDetailsPage() {
                 ))}
               </ul>
             </div>
-            <div className="mt-7 border-t border-fetch-ink/[0.08] pt-6 text-[14px] leading-[1.75] text-fetch-muted">
-              <p><span className="font-medium text-fetch-ink/80">Shipping & returns:</span> Final delivery estimates and return eligibility are confirmed at checkout and in policy pages.</p>
+            <div className="mt-7 space-y-3 border-t border-fetch-ink/[0.08] pt-6 text-[14px] leading-[1.75] text-fetch-muted">
+              <p><span className="font-medium text-fetch-ink/80">Shipping & delivery:</span> {product.estimatedDelivery ? `Estimated delivery ${product.estimatedDelivery}. ` : ''}Orders are processed after payment confirmation. Carrier, tracking number, shipment dates, and delivery timeline are provided in your account once your order ships.</p>
+              <p><span className="font-medium text-fetch-ink/80">Payment:</span> Secure PayPal checkout with server-confirmed payment status.</p>
+              <p><span className="font-medium text-fetch-ink/80">Returns & support:</span> Return eligibility and final delivery/tax details are confirmed at checkout and in our policy pages. Contact support with your order number if you need help.</p>
             </div>
           </div>
         </div>

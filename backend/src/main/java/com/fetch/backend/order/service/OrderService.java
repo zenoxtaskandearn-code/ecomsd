@@ -146,15 +146,127 @@ public class OrderService {
         List<OrderDtos.OrderItemResponse> itemDtos = items.stream().map(i -> new OrderDtos.OrderItemResponse(
                 i.getProductNameSnapshot(), i.getVariantTitleSnapshot(), i.getSkuSnapshot(), i.getUnitPriceAmount(), i.getQuantity(), i.getLineTotalAmount())).toList();
         List<OrderDtos.ShipmentResponse> shipments = shipmentRepository.findByOrderId(order.getId()).stream()
-                .map(s -> new OrderDtos.ShipmentResponse(s.getCarrier(), s.getTrackingNumber(), s.getTrackingUrl(), s.getStatus(), s.getShippedAt() == null ? null : s.getShippedAt().toString()))
+                .map(s -> new OrderDtos.ShipmentResponse(
+                        s.getCarrier(), s.getTrackingNumber(), s.getTrackingUrl(), s.getStatus(),
+                        fmt(s.getShippedAt()), fmt(s.getDeliveredAt()), fmt(s.getCjTrackSyncedAt()), s.getSource()))
                 .toList();
+
+        Instant shippedAt = shipments.stream().map(s -> parseInstantSafe(s.shippedAt())).filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(null);
+        // prefer entity shipment timestamps for timeline accuracy
+        var shipEntities = shipmentRepository.findByOrderId(order.getId());
+        Instant shippedEntityAt = shipEntities.stream().map(com.fetch.backend.payment.entity.Shipment::getShippedAt).filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(null);
+        Instant deliveredEntityAt = shipEntities.stream().map(com.fetch.backend.payment.entity.Shipment::getDeliveredAt).filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null);
+        if (shippedAt == null) shippedAt = shippedEntityAt;
+
+        OrderDtos.FulfillmentInfo fulfillment = buildFulfillment(order, shipEntities, deliveredEntityAt);
+        List<OrderDtos.TimelineEvent> timeline = buildTimeline(order, shippedAt, deliveredEntityAt, fulfillment);
+
         return new OrderDtos.OrderResponse(order.getOrderNumber(), order.getStatus(), order.getCurrency(), order.getSubtotalAmount(),
                 order.getShippingAmount(), order.getTaxAmount(), order.getDiscountAmount(), order.getTotalAmount(),
-                order.getCustomerEmail(), order.getPlacedAt() == null ? null : order.getPlacedAt().toString(), order.getPaidAt() == null ? null : order.getPaidAt().toString(), addr, itemDtos, shipments);
+                order.getCustomerEmail(), fmt(order.getPlacedAt()), fmt(order.getPaidAt()), addr, itemDtos, shipments, timeline, fulfillment);
     }
+
+    private OrderDtos.FulfillmentInfo buildFulfillment(Order order, List<com.fetch.backend.payment.entity.Shipment> shipEntities, Instant deliveredEntityAt) {
+        boolean hasCj = (order.getCjOrderId() != null && !order.getCjOrderId().isBlank())
+                || (order.getCjFulfillmentStatus() != null && !order.getCjFulfillmentStatus().isBlank())
+                || (order.getCjSubmittedAt() != null);
+        String supplierName = hasCj ? "CJdropshipping" : "Fulfillment partner";
+        String supplierOrderId = order.getCjOrderNumber() != null && !order.getCjOrderNumber().isBlank() ? order.getCjOrderNumber() : order.getCjOrderId();
+        String fulfillmentStatus = order.getCjFulfillmentStatus();
+        Instant lastUpdated = order.getCjLastSyncAt() != null ? order.getCjLastSyncAt() : (order.getUpdatedAt() != null ? order.getUpdatedAt() : order.getPlacedAt());
+        String expected = estimateDelivery(order, shipEntities, deliveredEntityAt);
+        String msg = fulfillmentMessage(order, shipEntities, hasCj);
+        // expose non-sensitive CJ errors as status context; keep empty if none
+        String err = order.getCjLastError();
+        if (err != null && err.length() > 280) err = err.substring(0, 280) + "…";
+        return new OrderDtos.FulfillmentInfo(supplierName, fulfillmentStatus, supplierOrderId,
+                fmt(order.getCjSubmittedAt()), fmt(lastUpdated), expected, msg, err);
+    }
+
+    private String fulfillmentMessage(Order order, List<com.fetch.backend.payment.entity.Shipment> shipEntities, boolean hasCj) {
+        String st = nz(order.getStatus()).toUpperCase(Locale.ROOT);
+        if ("DELIVERED".equals(st)) return "Your order was delivered. Thank you for shopping with Lupine & Leash.";
+        if ("SHIPPED".equals(st)) return "Your order is on the way. Tracking updates are shown below when available.";
+        if ("FULFILLMENT_SUBMITTED".equals(st) || (hasCj && "PROCESSING".equals(st))) return "Your order has been submitted to our fulfillment partner and is being prepared.";
+        if ("PAID".equals(st) || "PROCESSING".equals(st)) return "Payment confirmed. We’re preparing your order for fulfillment.";
+        if ("PENDING_PAYMENT".equals(st)) return "Waiting for payment confirmation.";
+        if ("PAYMENT_FAILED".equals(st)) return "Payment was not completed. You can try checkout again.";
+        if ("CANCELLED".equals(st) || "REFUNDED".equals(st)) return "This order is " + st.toLowerCase(Locale.ROOT).replace('_', ' ') + ".";
+        if (!shipEntities.isEmpty()) return "Fulfillment is in progress. See shipment details below.";
+        return "We’ll update this page as your order progresses.";
+    }
+
+    private String estimateDelivery(Order order, List<com.fetch.backend.payment.entity.Shipment> shipEntities, Instant deliveredEntityAt) {
+        if (deliveredEntityAt != null || "DELIVERED".equalsIgnoreCase(nz(order.getStatus()))) return "Delivered";
+        String st = nz(order.getStatus()).toUpperCase(Locale.ROOT);
+        if ("CANCELLED".equals(st) || "REFUNDED".equals(st)) return "Not applicable";
+        Instant base = order.getPaidAt() != null ? order.getPaidAt() : order.getPlacedAt();
+        if (base == null) return "To be confirmed after processing";
+        // typical dropshipping window shown as range; refined when shipped
+        java.time.ZoneId zone = java.time.ZoneId.of("UTC");
+        java.time.LocalDate b = base.atZone(zone).toLocalDate();
+        if ("SHIPPED".equals(st) || shipEntities.stream().anyMatch(s -> s.getShippedAt() != null)) {
+            java.time.LocalDate from = b.plusDays(5);
+            java.time.LocalDate to = b.plusDays(12);
+            return "Estimated " + from + " to " + to + " (UTC)";
+        }
+        if ("PAID".equals(st) || "PROCESSING".equals(st) || "FULFILLMENT_SUBMITTED".equals(st)) {
+            java.time.LocalDate from = b.plusDays(7);
+            java.time.LocalDate to = b.plusDays(15);
+            return "Estimated " + from + " to " + to + " (UTC)";
+        }
+        if ("PENDING_PAYMENT".equals(st) || "PAYMENT_FAILED".equals(st)) return "Starts after payment confirmation";
+        return "Estimated 7–15 business days after payment";
+    }
+
+    private List<OrderDtos.TimelineEvent> buildTimeline(Order order, Instant shippedAt, Instant deliveredAt, OrderDtos.FulfillmentInfo fulfillment) {
+        String st = nz(order.getStatus()).toUpperCase(Locale.ROOT);
+        boolean cancelled = "CANCELLED".equals(st) || "REFUNDED".equals(st);
+        boolean paid = order.getPaidAt() != null || Set.of("PAID","PROCESSING","FULFILLMENT_SUBMITTED","SHIPPED","DELIVERED").contains(st);
+        boolean processing = paid && (Set.of("PROCESSING","FULFILLMENT_SUBMITTED","SHIPPED","DELIVERED").contains(st) || order.getCjSubmittedAt() != null);
+        boolean submitted = order.getCjSubmittedAt() != null || "FULFILLMENT_SUBMITTED".equals(st) || "SHIPPED".equals(st) || "DELIVERED".equals(st);
+        boolean shipped = shippedAt != null || "SHIPPED".equals(st) || "DELIVERED".equals(st);
+        boolean delivered = deliveredAt != null || "DELIVERED".equals(st);
+
+        LinkedHashMap<String, OrderDtos.TimelineEvent> steps = new LinkedHashMap<>();
+        steps.put("placed", ev("placed", "Order placed", order.getPlacedAt(), true, "PENDING_PAYMENT".equals(st) && !paid, null));
+        if ("PAYMENT_FAILED".equals(st)) {
+            steps.put("payment_failed", ev("payment_failed", "Payment failed", order.getUpdatedAt(), true, true, "Payment was not completed."));
+        } else {
+            steps.put("paid", ev("paid", "Payment confirmed", order.getPaidAt(), paid, paid && !processing && !cancelled, paid ? null : "Awaiting payment confirmation"));
+        }
+        if (!cancelled) {
+            steps.put("processing", ev("processing", "Processing order", submitted ? order.getCjSubmittedAt() : (processing ? order.getPaidAt() : null), processing, processing && !submitted && !shipped, processing ? "Preparing items for fulfillment" : "Pending"));
+            if (submitted || order.getCjOrderId() != null) {
+                String note = fulfillment != null && fulfillment.supplierName() != null ? "Submitted to " + fulfillment.supplierName() : "Submitted to fulfillment partner";
+                steps.put("submitted", ev("submitted", "Submitted for fulfillment", order.getCjSubmittedAt(), submitted, submitted && !shipped, submitted ? note : "Pending"));
+            }
+            steps.put("shipped", ev("shipped", "Shipped", shippedAt, shipped, shipped && !delivered, shipped ? "Package handed to carrier" : "Pending"));
+            steps.put("delivered", ev("delivered", "Delivered", deliveredAt, delivered, delivered, delivered ? "Order delivered" : "Pending"));
+        } else {
+            steps.put("closed", ev("closed", st.charAt(0) + st.substring(1).toLowerCase(Locale.ROOT).replace('_', ' '), order.getUpdatedAt(), true, true, "Order closed"));
+        }
+        return new ArrayList<>(steps.values());
+    }
+
+    private OrderDtos.TimelineEvent ev(String key, String label, Instant at, boolean done, boolean current, String note) {
+        String when = done ? fmt(at) : null;
+        String noteOut = note;
+        if (when == null && done && at == null) when = current ? "In progress" : "Completed";
+        if (when == null && !done) when = "Pending";
+        return new OrderDtos.TimelineEvent(key, label, when, done, current, noteOut);
+    }
+
+    private static String fmt(Instant t) { return t == null ? null : t.toString(); }
+    private static Instant parseInstantSafe(String s) { try { return s == null ? null : Instant.parse(s); } catch (Exception e) { return null; } }
+    private static String nz(String s) { return s == null ? "" : s; }
 
     private String generateOrderNumber() {
         return "FT-" + (100000 + new Random().nextInt(900000));
+    }
+
+    public com.fetch.backend.order.entity.Order getOrderEntity(String orderNumber) {
+        return orderRepository.findByOrderNumber(orderNumber).orElseThrow(() -> new NotFoundException("Order not found"));
     }
     private String writeJson(Object value) { try { return objectMapper.writeValueAsString(value); } catch (Exception e) { throw new BadRequestException("Invalid address"); } }
     private Map<String, Object> readJson(String json) { try { return objectMapper.readValue(json, new TypeReference<>() {}); } catch (Exception e) { return Map.of(); } }

@@ -49,7 +49,8 @@ public class CatalogService {
         List<CatalogDtos.ImageResponse> images = imageEntities
                 .stream().map(i -> new CatalogDtos.ImageResponse(i.getId(), i.getUrl(), i.getAltText(), i.getSortOrder(), i.getVariantId())).toList();
         return new CatalogDtos.ProductDetailResponse(product.getId(), product.getName(), product.getSlug(), product.getDescription(),
-                product.getBasePriceAmount(), product.getCurrency(), product.getStatus(), product.getEstimatedDelivery(), toCategory(product.getCategory()), variants, images);
+                product.getBasePriceAmount(), product.getCurrency(), product.getStatus(), product.getEstimatedDelivery(), toCategory(product.getCategory()), variants, images,
+                product.getShippingOptionsJson(), product.getSeoTitle(), product.getSeoDescription());
     }
 
     private CatalogDtos.CategoryResponse toCategory(Category c) {
@@ -60,7 +61,8 @@ public class CatalogService {
         String imageUrl = images == null ? null : images.stream()
                 .filter(i -> i.getVariantId() != null && i.getVariantId().equals(v.getId()))
                 .map(ProductImage::getUrl).filter(u -> u != null && !u.isBlank()).findFirst().orElse(null);
-        return new CatalogDtos.VariantResponse(v.getId(), v.getSku(), v.getTitle(), v.getPriceAmount(), v.getCurrency(), v.isActive(), v.getOptionValuesJson(), imageUrl);
+        return new CatalogDtos.VariantResponse(v.getId(), v.getSku(), v.getTitle(), v.getPriceAmount(), v.getCurrency(), v.isActive(), v.getOptionValuesJson(), imageUrl,
+                v.getStockAvailability(), v.getWeightGrams(), v.getWarehouseInfo());
     }
 
     private CatalogDtos.ProductSummaryResponse toSummary(Product p) {
