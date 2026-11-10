@@ -56,10 +56,12 @@ public class AdminCjImportController {
 
     @GetMapping("/status")
     public CatalogDtos.CjImportStatusResponse status() {
+        boolean openIdAvailable = false;
+        try { String oid = cjClient.getOpenId(); openIdAvailable = oid != null && !oid.isBlank(); } catch (Exception ignored) {}
         if (cjClient.isConfigured()) {
-            return new CatalogDtos.CjImportStatusResponse(true, "API", "Official CJdropshipping API credentials are configured. You can auto-import your CJ My Products or use manual import.");
+            return new CatalogDtos.CjImportStatusResponse(true, "API", "Official CJdropshipping API credentials are configured. You can auto-import your CJ My Products or use manual import.", openIdAvailable);
         }
-        return new CatalogDtos.CjImportStatusResponse(false, "MANUAL", "CJdropshipping API access is not configured. Use manual product import (no scraping/fake endpoints). Configure CJ_API_ENABLED=true and CJ_API_KEY for official API auto-import.");
+        return new CatalogDtos.CjImportStatusResponse(false, "MANUAL", "CJdropshipping API access is not configured. Use manual product import (no scraping/fake endpoints). Configure CJ_API_ENABLED=true and CJ_API_KEY for official API auto-import.", openIdAvailable);
     }
 
     @PostMapping("/my-products")

@@ -21,6 +21,7 @@ public class CjDropshippingClient {
     private final boolean enabled;
     private final String apiKey;
     private String accessToken;
+    private String openId;
     private Instant tokenExpiry = Instant.EPOCH;
     private final Object tokenLock = new Object();
 
@@ -48,11 +49,22 @@ public class CjDropshippingClient {
             JsonNode root = post("/authentication/getAccessToken", body, null);
             JsonNode data = requireData(root);
             accessToken = text(data, "accessToken");
+            openId = text(data, "openId");
             if (accessToken == null || accessToken.isBlank()) throw new BadRequestException("CJ authentication failed: no access token returned.");
             tokenExpiry = Instant.now().plus(Duration.ofDays(150)); // CJ tokens last ~180 days; refresh safely early
             String exp = text(data, "accessTokenExpiryDate");
             // keep conservative expiry; CJ returns date string but format varies
             return accessToken;
+        }
+    }
+
+    public String getOpenId() {
+        if (!isConfigured()) return null;
+        synchronized (tokenLock) {
+            if ((accessToken == null || Instant.now().isAfter(tokenExpiry.minusSeconds(300))) && (openId == null || openId.isBlank())) {
+                try { getAccessToken(); } catch (Exception ignored) {}
+            }
+            return openId;
         }
     }
 

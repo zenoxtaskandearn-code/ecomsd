@@ -90,7 +90,7 @@ public class CatalogDtos {
             String internalNotes
     ) {}
 
-    public record CjImportStatusResponse(boolean apiConfigured, String mode, String message) {}
+    public record CjImportStatusResponse(boolean apiConfigured, String mode, String message, boolean openIdAvailable) {}
 
     public record CjAutoImportRequest(
             @NotNull Long categoryId,
