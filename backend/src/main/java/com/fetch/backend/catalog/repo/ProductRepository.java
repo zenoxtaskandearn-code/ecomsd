@@ -18,7 +18,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             select p from Product p
             where p.status = 'ACTIVE'
               and (:categorySlug is null or p.category.slug = :categorySlug)
-              and (:q is null or lower(p.name) like lower(concat('%', :q, '%')))
+              and (:q is null or lower(cast(p.name as string)) like lower(concat('%', cast(:q as string), '%')))
             """)
     Page<Product> searchActive(@Param("categorySlug") String categorySlug, @Param("q") String q, Pageable pageable);
 }
