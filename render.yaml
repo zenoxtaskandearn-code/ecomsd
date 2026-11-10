@@ -64,7 +64,7 @@ services:
       - key: CJ_AUTO_SUBMIT_ON_CREATE
         value: "false"
       - key: CJ_FULFILLMENT_SYNC_ENABLED
-        value: "false"
+        value: "true"
       - key: CJ_FULFILLMENT_SYNC_DELAY_MS
         value: "900000"
       - key: CJ_FULFILLMENT_SYNC_INITIAL_DELAY_MS
@@ -73,6 +73,10 @@ services:
         value: "10"
       - key: CJ_ORDER_CREATE_PATH
         value: /shopping/order/createOrderV2
+      - key: CJ_FROM_COUNTRY_CODE
+        value: "CN"
+      - key: CJ_LOGISTIC_NAME
+        value: ""
 
   # Vite/React frontend (static site)
   - type: web

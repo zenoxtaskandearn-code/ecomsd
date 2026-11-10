@@ -75,6 +75,11 @@ export default function AdminDashboardPage() {
         {loading ? Array.from({length:8}).map((_,i)=>(<div key={i} className="rounded-2xl border border-[#e5e7eb] bg-white p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)]"><div className="space-y-3"><div className="h-3 w-24 animate-pulse rounded bg-[#f3f4f6]" /><div className="h-7 w-28 animate-pulse rounded bg-[#f3f4f6]" /><div className="h-3 w-36 animate-pulse rounded bg-[#f3f4f6]" /></div></div>)) : cards.map((c) => <StatCard key={c.label} {...c} />)}
       </div>
 
+      {apiEnabled && s && s.paidRevenue == null && s.ordersByStatus == null && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-[13px] text-amber-900">
+          <span className="font-medium">Backend update pending or deploy behind.</span> The admin API is returning an older stats response, so profit/CJ/order-breakdown metrics cannot be shown yet. Deploy the latest backend commit on Render and refresh this page.
+        </div>
+      )}
       {apiEnabled && s && Number(s.itemsSold||0) > 0 && Number(s.itemsWithCostData||0) < Number(s.itemsSold||0) && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-[13px] text-amber-900">
           <span className="font-medium">Profit is estimated.</span> Supplier/shipping cost data is missing for some sold items ({Number(s.itemsSold||0) - Number(s.itemsWithCostData||0)} item(s) uncosted). Add supplier cost and shipping cost on product variants to see accurate profit/margins.
