@@ -12,6 +12,7 @@ import com.fetch.backend.order.entity.Order;
 import com.fetch.backend.order.entity.OrderItem;
 import com.fetch.backend.order.repo.OrderItemRepository;
 import com.fetch.backend.order.repo.OrderRepository;
+import com.fetch.backend.order.service.OrderStatusService;
 import com.fetch.backend.payment.entity.Shipment;
 import com.fetch.backend.payment.repo.ShipmentRepository;
 import org.springframework.context.ApplicationContext;
@@ -31,13 +32,14 @@ public class CjFulfillmentService {
     private final ShipmentRepository shipmentRepository;
     private final ObjectMapper mapper;
     private final ApplicationContext applicationContext;
+    private final OrderStatusService orderStatusService;
 
     public CjFulfillmentService(CjDropshippingClient cj, OrderRepository orderRepository, OrderItemRepository orderItemRepository,
                                 ProductVariantRepository variantRepository, ShipmentRepository shipmentRepository, ObjectMapper mapper,
-                                ApplicationContext applicationContext) {
+                                ApplicationContext applicationContext, OrderStatusService orderStatusService) {
         this.cj = cj; this.orderRepository = orderRepository; this.orderItemRepository = orderItemRepository;
         this.variantRepository = variantRepository; this.shipmentRepository = shipmentRepository; this.mapper = mapper;
-        this.applicationContext = applicationContext;
+        this.applicationContext = applicationContext; this.orderStatusService = orderStatusService;
     }
 
     public record CjSubmitOptions(String logisticName, String fromCountryCode, String remark) {
@@ -58,53 +60,83 @@ public class CjFulfillmentService {
     public Map<String, Object> submitOrderToCj(String orderNumber, boolean allowPendingPayment, CjSubmitOptions options) {
         Order order = orderRepository.findByOrderNumber(orderNumber).orElseThrow(() -> new NotFoundException("Order not found"));
         if (!cj.isConfigured()) throw new BadRequestException("CJdropshipping API is not configured. Set CJ_API_ENABLED=true and CJ_API_KEY.");
-        // Idempotency/race guard: if already submitted, never submit again.
+        // Re-load/guard: if already submitted, never submit again (idempotent/retry-safe).
         if (order.getCjOrderId() != null && !order.getCjOrderId().isBlank()) {
             try { syncOrderFromCj(orderNumber); } catch (Exception ignored) {}
             return detailMap(orderRepository.findByOrderNumber(orderNumber).orElse(order));
         }
         String status = nz(order.getStatus()).toUpperCase(Locale.ROOT);
+        String payStatus = nz(order.getPaymentStatus()).toUpperCase(Locale.ROOT);
         // Safety: never fulfill unpaid/cancelled/refunded orders via standard flow.
-        if (Set.of("CANCELLED", "REFUNDED").contains(status)) {
+        if (Set.of("CANCELLED", "REFUNDED", "PARTIALLY_REFUNDED").contains(status)) {
             throw new BadRequestException("Cannot submit a " + status.toLowerCase(Locale.ROOT) + " order to CJ.");
         }
+        if (!allowPendingPayment) {
+            // Require server-confirmed payment for normal fulfillment
+            if (!"PAID".equals(status) && !"CAPTURED".equals(payStatus)) {
+                throw new BadRequestException("Cannot submit to CJ: payment is not server-confirmed (PAID/CAPTURED). Current status: " + order.getStatus());
+            }
+        }
         Set<String> allowed = allowPendingPayment
-                ? Set.of("PENDING_PAYMENT", "PAID", "PROCESSING", "FULFILLMENT_SUBMITTED", "PAYMENT_FAILED")
-                : Set.of("PAID", "PROCESSING", "FULFILLMENT_SUBMITTED");
+                ? Set.of("PENDING_PAYMENT", "PAID", "PROCESSING", "FULFILLMENT_SUBMITTED", "PAYMENT_FAILED", "AWAITING_FULFILMENT", "SUPPLIER_REVIEW_REQUIRED")
+                : Set.of("PAID", "PROCESSING", "FULFILLMENT_SUBMITTED", "AWAITING_FULFILMENT", "SUPPLIER_REVIEW_REQUIRED");
         if (!allowed.contains(status)) {
-            throw new BadRequestException("Order cannot be submitted to CJ in status " + order.getStatus() + (allowPendingPayment ? "." : ". Wait for server-confirmed payment (PAID) or submit manually after review."));
+            throw new BadRequestException("Order cannot be submitted to CJ in status " + order.getStatus() + (allowPendingPayment ? "." : ". Wait for server-confirmed payment/review."));
         }
         List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
         if (items.isEmpty()) throw new BadRequestException("Order has no items.");
         List<CjDropshippingClient.CjOrderProduct> products = new ArrayList<>();
         List<String> missing = new ArrayList<>();
+        List<String> inactive = new ArrayList<>();
         for (OrderItem item : items) {
             ProductVariant v = item.getProductVariantId() == null ? null : variantRepository.findById(item.getProductVariantId()).orElse(null);
-            String vid = v == null ? null : v.getCjVariantId();
-            if (vid == null || vid.isBlank()) missing.add((item.getSkuSnapshot() == null ? "item" : item.getSkuSnapshot()) + " (missing CJ variant id)");
-            else products.add(new CjDropshippingClient.CjOrderProduct(vid.trim(), Math.max(1, item.getQuantity())));
+            if (v == null) { missing.add(nz(item.getSkuSnapshot(), "item") + " (variant not found)"); continue; }
+            String vid = v.getCjVariantId();
+            if (vid == null || vid.isBlank()) missing.add((item.getSkuSnapshot() == null ? "variant#" + v.getId() : item.getSkuSnapshot()) + " (missing CJ variant id)");
+            else {
+                if (!v.isActive()) inactive.add(nz(item.getSkuSnapshot(), "variant#" + v.getId()));
+                products.add(new CjDropshippingClient.CjOrderProduct(vid.trim(), Math.max(1, item.getQuantity())));
+            }
         }
         if (!missing.isEmpty()) {
-            throw new BadRequestException("Cannot submit to CJ: " + String.join("; ", missing) + ". Re-import/sync variants from CJ so cjVariantId is stored.");
+            markReviewRequired(order, "CJ mapping incomplete: " + String.join("; ", missing));
+            throw new BadRequestException("Cannot submit to CJ: " + String.join("; ", missing) + ". Ensure CJ variant mapping exists.");
+        }
+        if (!inactive.isEmpty()) {
+            markReviewRequired(order, "Inactive variant(s): " + String.join(", ", inactive));
+            throw new BadRequestException("Cannot submit to CJ: inactive variant(s) in order: " + String.join(", ", inactive));
         }
         Map<String, Object> addr = readJson(order.getShippingAddressSnapshot());
         String countryCode = first(addr, "countryCode", "country_code", "country").toUpperCase(Locale.ROOT);
         if (countryCode.length() > 2) countryCode = countryCode.substring(0, 2);
-        if (countryCode.isBlank()) countryCode = "US";
+        String city = nz(first(addr, "city"));
+        String line1 = nz(first(addr, "line1", "address1", "address"));
+        String postal = nz(first(addr, "postalCode", "zip", "postcode"));
+        if (countryCode.isBlank() || city.isBlank() || line1.isBlank()) {
+            markReviewRequired(order, "Shipping destination incomplete");
+            throw new BadRequestException("Cannot submit to CJ: shipping address must include country, city, and address line 1.");
+        }
         String fullName = nz(first(addr, "fullName", "name", "recipient"));
         String phone = nz(first(addr, "phone", "phoneNumber"));
         CjSubmitOptions opt = options == null ? CjSubmitOptions.none() : options;
+        // Mark processing intent before external call (best-effort audit trail)
+        String fromFul = order.getFulfillmentStatus();
+        order.setFulfillmentStatus("PROCESSING");
+        orderRepository.save(order);
+        if (orderStatusService != null && order.getId() != null) {
+            orderStatusService.record(order.getId(), "FULFILLMENT", fromFul, "PROCESSING", "SYSTEM", "Submitting to CJ after pre-submit checks");
+        }
         CjDropshippingClient.CjCreateOrderRequest req = new CjDropshippingClient.CjCreateOrderRequest(
                 order.getOrderNumber(),
                 countryCode,
                 nz(first(addr, "countryName", "country")).isBlank() ? countryCode : nz(first(addr, "countryName", "country")),
                 nz(first(addr, "state", "province", "region")),
-                nz(first(addr, "city")),
-                nz(first(addr, "line1", "address1", "address")),
+                city,
+                line1,
                 nz(first(addr, "line2", "address2")),
                 fullName.isBlank() ? "Customer" : fullName,
                 phone.isBlank() ? "0000000000" : phone,
-                nz(first(addr, "postalCode", "zip", "postcode")),
+                postal,
                 order.getCustomerEmail(),
                 blankToNull(opt.remark()) != null ? opt.remark().trim() : ("Lupine & Leash order " + order.getOrderNumber()),
                 blankToNull(opt.logisticName()),
@@ -113,6 +145,13 @@ public class CjFulfillmentService {
         );
         try {
             CjDropshippingClient.CjOrderResult res = cj.createOrder(req);
+            // Reload latest to reduce race window
+            order = orderRepository.findByOrderNumber(orderNumber).orElse(order);
+            if (order.getCjOrderId() != null && !order.getCjOrderId().isBlank()) {
+                // another attempt already recorded CJ order; treat as idempotent success
+                try { syncInternal(order); } catch (Exception ignored) {}
+                return detailMap(orderRepository.findByOrderNumber(orderNumber).orElse(order));
+            }
             order.setCjOrderId(blankToNull(res.cjOrderId() != null ? res.cjOrderId() : res.cjOrderNumber()));
             order.setCjOrderNumber(blankToNull(res.cjOrderNumber()));
             order.setCjFulfillmentStatus(blankToNull(res.status()));
@@ -120,20 +159,50 @@ public class CjFulfillmentService {
             order.setCjLastSyncAt(Instant.now());
             order.setCjLastError(null);
             order.setCjRawSnapshot(writeJsonSafe(res.raw()));
-            if (Set.of("PAID", "PROCESSING").contains(status)) order.setStatus("FULFILLMENT_SUBMITTED");
+            String fromOrder = order.getStatus();
+            String fromFul2 = order.getFulfillmentStatus();
+            if (Set.of("PAID", "PROCESSING", "AWAITING_FULFILMENT", "SUPPLIER_REVIEW_REQUIRED").contains(nz(fromOrder).toUpperCase(Locale.ROOT))) {
+                order.setStatus("FULFILLMENT_SUBMITTED");
+            }
+            order.setFulfillmentStatus("SUBMITTED");
             orderRepository.save(order);
-            // try to sync details/tracking immediately (best effort)
+            if (orderStatusService != null && order.getId() != null) {
+                orderStatusService.record(order.getId(), "FULFILLMENT", fromFul2, "SUBMITTED", "CJ", "Order submitted to CJ");
+                if (!"FULFILLMENT_SUBMITTED".equals(fromOrder)) orderStatusService.record(order.getId(), "ORDER", fromOrder, order.getStatus(), "CJ", "Fulfillment submitted to CJ");
+            }
             try { syncInternal(order); } catch (Exception ignored) {}
             return detailMap(orderRepository.findByOrderNumber(orderNumber).orElse(order));
         } catch (BadRequestException e) {
             self().recordFailure(order.getId(), e.getMessage());
+            markReviewRequired(orderRepository.findByOrderNumber(orderNumber).orElse(order), "CJ submit rejected: " + safeMsg(e.getMessage()));
             throw e;
         } catch (Exception e) {
             String msg = "CJ order submission failed: " + (e.getMessage() == null ? "unknown error" : e.getMessage());
             self().recordFailure(order.getId(), msg.length() > 2000 ? msg.substring(0, 2000) : msg);
+            markReviewRequired(orderRepository.findByOrderNumber(orderNumber).orElse(order), "CJ submit failed: " + safeMsg(e.getMessage()));
             throw new BadRequestException(msg);
         }
     }
+
+    private void markReviewRequired(Order order, String reason) {
+        try {
+            String fromFul = order.getFulfillmentStatus();
+            String fromOrder = order.getStatus();
+            order.setFulfillmentStatus("REVIEW_REQUIRED");
+            // keep paid orders paid; don't downgrade payment/order inappropriately
+            if ("FULFILLMENT_SUBMITTED".equals(nz(fromOrder).toUpperCase(Locale.ROOT))) {
+                // leave as-is except fulfillment marker below handled by admin review flow
+            }
+            order.setCjLastError(reason == null ? null : (reason.length() > 2000 ? reason.substring(0, 2000) : reason));
+            order.setCjLastSyncAt(Instant.now());
+            orderRepository.save(order);
+            if (orderStatusService != null && order.getId() != null) {
+                orderStatusService.record(order.getId(), "FULFILLMENT", fromFul, "REVIEW_REQUIRED", "SYSTEM", reason);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private static String nz(String s, String def) { String v = nz(s); return v.isBlank() ? def : v; }
 
     @Transactional
     public Map<String, Object> syncOrderFromCj(String orderNumber) {
@@ -193,9 +262,22 @@ public class CjFulfillmentService {
     public void recordFailure(Long orderId, String error) {
         if (orderId == null) return;
         orderRepository.findById(orderId).ifPresent(o -> {
+            String fromFul = o.getFulfillmentStatus();
             o.setCjLastError(error == null ? null : (error.length() > 2000 ? error.substring(0, 2000) : error));
             o.setCjLastSyncAt(Instant.now());
+            // If not yet submitted, mark for manual review; if submitted keep submitted state but record error
+            if (o.getCjOrderId() == null || o.getCjOrderId().isBlank()) {
+                o.setFulfillmentStatus("REVIEW_REQUIRED");
+            }
             orderRepository.save(o);
+            if (orderStatusService != null) {
+                String note = error == null ? "CJ operation failed" : (error.length() > 500 ? error.substring(0, 500) : error);
+                if (o.getCjOrderId() == null || o.getCjOrderId().isBlank()) {
+                    orderStatusService.record(o.getId(), "FULFILLMENT", fromFul, o.getFulfillmentStatus(), "CJ", note);
+                } else {
+                    orderStatusService.record(o.getId(), "FULFILLMENT", fromFul, o.getFulfillmentStatus(), "CJ", note);
+                }
+            }
         });
     }
 
@@ -257,21 +339,33 @@ public class CjFulfillmentService {
 
     private void applyStatusMapping(Order order, String cjStatus, String tracking) {
         String cur = nz(order.getStatus()).toUpperCase(Locale.ROOT);
-        if (Set.of("CANCELLED", "REFUNDED").contains(cur)) return;
+        String fromOrder = cur;
+        String fromFul = nz(order.getFulfillmentStatus()).toUpperCase(Locale.ROOT);
+        if (Set.of("CANCELLED", "REFUNDED", "PARTIALLY_REFUNDED").contains(cur)) return;
         String cj = nz(cjStatus).toUpperCase(Locale.ROOT);
         boolean hasTracking = tracking != null && !tracking.isBlank();
-        boolean delivered = cj.contains("DELIVER") || cj.contains("COMPLETED") && hasTracking || cj.equals("FINISH") || cj.equals("SIGNED");
-        boolean shipped = hasTracking || cj.contains("SHIP") || cj.contains("DISPATCH") || cj.contains("IN_TRANSIT") || cj.contains("TRANSIT") || cj.contains("OUT_FOR_DELIVERY");
+        boolean delivered = cj.contains("DELIVER") || (cj.contains("COMPLETED") && hasTracking) || cj.equals("FINISH") || cj.equals("SIGNED");
+        boolean shipped = hasTracking || cj.contains("SHIP") || cj.contains("DISPATCH") || cj.contains("IN_TRANSIT") || cj.contains("TRANSIT") || cj.contains("OUT_FOR_DELIVERY") || cj.contains("DELIVERING");
         boolean cancelled = cj.contains("CANCEL") || cj.contains("CLOSED") || cj.contains("REJECT");
         if (delivered) {
             order.setStatus("DELIVERED");
+            order.setFulfillmentStatus("DELIVERED");
         } else if (cancelled && !"DELIVERED".equals(cur) && !"SHIPPED".equals(cur)) {
-            // don't auto-cancel paid local orders aggressively; record CJ status but keep manual control
             order.setCjFulfillmentStatus(cjStatus == null ? "CJ_CANCELLED" : cjStatus);
-        } else if (shipped && Set.of("PAID", "PROCESSING", "FULFILLMENT_SUBMITTED", "PENDING_PAYMENT").contains(cur)) {
+            order.setFulfillmentStatus("REVIEW_REQUIRED");
+            // keep local paid/order state for manual resolution; record in history below
+        } else if (shipped && Set.of("PAID", "PROCESSING", "FULFILLMENT_SUBMITTED", "PENDING_PAYMENT", "AWAITING_FULFILMENT", "SUPPLIER_REVIEW_REQUIRED").contains(cur)) {
             order.setStatus("SHIPPED");
-        } else if (order.getCjOrderId() != null && "PAID".equals(cur)) {
+            order.setFulfillmentStatus(cj.contains("TRANSIT") || cj.contains("OUT_FOR_DELIVERY") ? "IN_TRANSIT" : "SHIPPED");
+        } else if (order.getCjOrderId() != null && Set.of("PAID", "PROCESSING", "AWAITING_FULFILMENT", "SUPPLIER_REVIEW_REQUIRED").contains(cur)) {
             order.setStatus("FULFILLMENT_SUBMITTED");
+            order.setFulfillmentStatus("SUBMITTED");
+        }
+        if (orderStatusService != null && order.getId() != null) {
+            String toOrder = nz(order.getStatus()).toUpperCase(Locale.ROOT);
+            String toFul = nz(order.getFulfillmentStatus()).toUpperCase(Locale.ROOT);
+            if (!Objects.equals(fromOrder, toOrder)) orderStatusService.record(order.getId(), "ORDER", fromOrder, toOrder, "CJ", "Status synced from CJ" + (cjStatus == null ? "" : ": " + cjStatus));
+            if (!Objects.equals(fromFul, toFul)) orderStatusService.record(order.getId(), "FULFILLMENT", fromFul, toFul, "CJ", "Fulfillment synced from CJ" + (cjStatus == null ? "" : ": " + cjStatus));
         }
     }
 

@@ -16,7 +16,11 @@ public class Order {
     @Column(name = "user_id")
     private Long userId;
     @Column(nullable = false)
-    private String status; // PENDING_PAYMENT, PAYMENT_FAILED, PAID, PROCESSING, FULFILLMENT_SUBMITTED, SHIPPED, DELIVERED, CANCELLED, REFUNDED
+    private String status; // overall/order lifecycle status (kept for compatibility)
+    @Column(name = "payment_status", nullable = false)
+    private String paymentStatus = "PENDING"; // PENDING, FAILED, CAPTURED, REFUNDED, PARTIALLY_REFUNDED, CANCELLED
+    @Column(name = "fulfillment_status", nullable = false)
+    private String fulfillmentStatus = "PENDING"; // PENDING, REVIEW_REQUIRED, PROCESSING, SUBMITTED, SHIPPED, IN_TRANSIT, DELIVERED, CANCELLED, FAILED
     @Column(nullable = false, length = 3)
     private String currency = "USD";
     @Column(name = "subtotal_amount", nullable = false, precision = 12, scale = 2)
@@ -69,6 +73,10 @@ public class Order {
     public void setUserId(Long userId) { this.userId = userId; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public String getPaymentStatus() { return paymentStatus; }
+    public void setPaymentStatus(String paymentStatus) { this.paymentStatus = paymentStatus; }
+    public String getFulfillmentStatus() { return fulfillmentStatus; }
+    public void setFulfillmentStatus(String fulfillmentStatus) { this.fulfillmentStatus = fulfillmentStatus; }
     public String getCurrency() { return currency; }
     public void setCurrency(String currency) { this.currency = currency; }
     public BigDecimal getSubtotalAmount() { return subtotalAmount; }

@@ -10,6 +10,7 @@ import com.fetch.backend.payment.entity.WebhookEvent;
 import com.fetch.backend.payment.repo.PaymentRepository;
 import com.fetch.backend.payment.repo.WebhookEventRepository;
 import com.fetch.backend.order.cj.CjAutoSubmitter;
+import com.fetch.backend.order.service.OrderStatusService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,15 +25,17 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final WebhookEventRepository webhookEventRepository;
     private final CjAutoSubmitter cjAutoSubmitter;
+    private final OrderStatusService orderStatusService;
 
     public PaymentService(PayPalClient payPalClient, OrderRepository orderRepository,
                           PaymentRepository paymentRepository, WebhookEventRepository webhookEventRepository,
-                          CjAutoSubmitter cjAutoSubmitter) {
+                          CjAutoSubmitter cjAutoSubmitter, OrderStatusService orderStatusService) {
         this.payPalClient = payPalClient;
         this.orderRepository = orderRepository;
         this.paymentRepository = paymentRepository;
         this.webhookEventRepository = webhookEventRepository;
         this.cjAutoSubmitter = cjAutoSubmitter;
+        this.orderStatusService = orderStatusService;
     }
 
     @Transactional
@@ -79,8 +82,15 @@ public class PaymentService {
             payment.setStatus("FAILED");
             payment.setRawResponseRedacted("{\"status\":\"" + status + "\"}");
             paymentRepository.save(payment);
+            String fromOrder = order.getStatus();
+            String fromPay = order.getPaymentStatus();
             order.setStatus("PAYMENT_FAILED");
+            order.setPaymentStatus("FAILED");
             orderRepository.save(order);
+            if (orderStatusService != null) {
+                orderStatusService.record(order.getId(), "ORDER", fromOrder, "PAYMENT_FAILED", "PAYPAL", "Payment capture not completed");
+                orderStatusService.record(order.getId(), "PAYMENT", fromPay, "FAILED", "PAYPAL", "Capture status: " + status);
+            }
             throw new BadRequestException("Payment was not completed");
         }
         // Financial safety: verify captured amount/currency match the server-side order total.
@@ -153,15 +163,24 @@ public class PaymentService {
     }
 
     private void applyCaptured(Order order, Payment payment, String captureId, String redacted) {
-        if ("CAPTURED".equals(payment.getStatus()) && "PAID".equals(order.getStatus())) return;
+        if ("CAPTURED".equals(payment.getStatus()) && "PAID".equalsIgnoreCase(order.getStatus())) return;
         payment.setProviderCaptureId(captureId);
         payment.setStatus("CAPTURED");
         payment.setRawResponseRedacted(redacted);
         paymentRepository.save(payment);
+        String fromOrder = order.getStatus();
+        String fromPay = order.getPaymentStatus();
         order.setStatus("PAID");
+        order.setPaymentStatus("CAPTURED");
+        if (order.getFulfillmentStatus() == null || order.getFulfillmentStatus().isBlank()) order.setFulfillmentStatus("PENDING");
         order.setPaidAt(Instant.now());
         if (order.getPlacedAt() == null) order.setPlacedAt(Instant.now());
         orderRepository.save(order);
+        if (orderStatusService != null) {
+            orderStatusService.record(order.getId(), "PAYMENT", fromPay, "CAPTURED", "PAYPAL", "Payment captured");
+            orderStatusService.record(order.getId(), "ORDER", fromOrder, "PAID", "PAYPAL", "Payment confirmed by server");
+            orderStatusService.record(order.getId(), "FULFILLMENT", null, order.getFulfillmentStatus(), "SYSTEM", "Awaiting fulfillment review/submission");
+        }
         cjAutoSubmitter.onOrderPaid(order.getOrderNumber());
     }
 

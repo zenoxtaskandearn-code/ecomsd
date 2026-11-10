@@ -36,13 +36,14 @@ public class OrderService {
     private final UserService userService;
     private final ObjectMapper objectMapper;
     private final CjAutoSubmitter cjAutoSubmitter;
+    private final OrderStatusService orderStatusService;
 
     public OrderService(OrderRepository orderRepository, OrderItemRepository orderItemRepository, CartRepository cartRepository,
                         CartItemRepository cartItemRepository, ProductVariantRepository variantRepository, ShipmentRepository shipmentRepository, UserService userService, ObjectMapper objectMapper,
-                        CjAutoSubmitter cjAutoSubmitter) {
+                        CjAutoSubmitter cjAutoSubmitter, OrderStatusService orderStatusService) {
         this.orderRepository = orderRepository; this.orderItemRepository = orderItemRepository; this.cartRepository = cartRepository;
         this.cartItemRepository = cartItemRepository; this.variantRepository = variantRepository; this.shipmentRepository = shipmentRepository; this.userService = userService; this.objectMapper = objectMapper;
-        this.cjAutoSubmitter = cjAutoSubmitter;
+        this.cjAutoSubmitter = cjAutoSubmitter; this.orderStatusService = orderStatusService;
     }
 
     @Transactional(readOnly = true)
@@ -85,6 +86,8 @@ public class OrderService {
                 order.setOrderNumber(generateOrderNumber());
                 order.setUserId(user.getId());
                 order.setStatus("PENDING_PAYMENT");
+                order.setPaymentStatus("PENDING");
+                order.setFulfillmentStatus("PENDING");
                 order.setCurrency("USD");
                 order.setCustomerEmail(request.customerEmail() != null && !request.customerEmail().isBlank() ? request.customerEmail().trim().toLowerCase() : user.getEmail());
                 order.setShippingAddressSnapshot(writeJson(request.shippingAddress()));
@@ -115,6 +118,9 @@ public class OrderService {
                 order.setTotalAmount(subtotal);
                 orderRepository.saveAndFlush(order);
                 for (OrderItem oi : orderItems) { oi.setOrderId(order.getId()); orderItemRepository.save(oi); }
+                orderStatusService.record(order.getId(), "ORDER", null, "PENDING_PAYMENT", "SYSTEM", "Order created, awaiting payment");
+                orderStatusService.record(order.getId(), "PAYMENT", null, "PENDING", "SYSTEM", "Payment pending");
+                orderStatusService.record(order.getId(), "FULFILLMENT", null, "PENDING", "SYSTEM", "Fulfillment pending payment");
 
                 cart.setStatus("CONVERTED");
                 cartRepository.save(cart);

@@ -1,10 +1,12 @@
 package com.fetch.backend.order.admin;
 
+import com.fetch.backend.common.error.BadRequestException;
 import com.fetch.backend.common.error.NotFoundException;
 import com.fetch.backend.order.cj.CjFulfillmentService;
 import com.fetch.backend.order.entity.Order;
 import com.fetch.backend.order.repo.OrderItemRepository;
 import com.fetch.backend.order.repo.OrderRepository;
+import com.fetch.backend.order.service.OrderStatusService;
 import com.fetch.backend.payment.entity.Shipment;
 import com.fetch.backend.payment.repo.ShipmentRepository;
 import org.springframework.web.bind.annotation.*;
@@ -23,11 +25,12 @@ public class AdminOrderController {
     private final OrderItemRepository orderItemRepository;
     private final ShipmentRepository shipmentRepository;
     private final CjFulfillmentService cjFulfillmentService;
+    private final OrderStatusService orderStatusService;
 
     public AdminOrderController(OrderRepository orderRepository, OrderItemRepository orderItemRepository, ShipmentRepository shipmentRepository,
-                                CjFulfillmentService cjFulfillmentService) {
+                                CjFulfillmentService cjFulfillmentService, OrderStatusService orderStatusService) {
         this.orderRepository = orderRepository; this.orderItemRepository = orderItemRepository; this.shipmentRepository = shipmentRepository;
-        this.cjFulfillmentService = cjFulfillmentService;
+        this.cjFulfillmentService = cjFulfillmentService; this.orderStatusService = orderStatusService;
     }
 
     @GetMapping
@@ -61,7 +64,21 @@ public class AdminOrderController {
     public Order updateStatus(@PathVariable String orderNumber, @RequestBody Map<String, String> body) {
         Order order = orderRepository.findByOrderNumber(orderNumber).orElseThrow(() -> new NotFoundException("Order not found"));
         String next = body.get("status");
-        if (next != null && !next.isBlank()) order.setStatus(next.trim().toUpperCase());
+        if (next == null || next.isBlank()) throw new BadRequestException("status is required");
+        String target = next.trim().toUpperCase();
+        String from = order.getStatus();
+        // Basic financial/order safety: don't mark PAID without payment capture; don't regress delivered/refunded arbitrarily
+        if ("PAID".equals(target) && !"CAPTURED".equalsIgnoreCase(nz(order.getPaymentStatus()))) {
+            throw new BadRequestException("Cannot set order to PAID without server-confirmed captured payment.");
+        }
+        if (Set.of("REFUNDED", "CANCELLED").contains(from) && !Set.of("REFUNDED", "CANCELLED").contains(target)) {
+            throw new BadRequestException("Cannot move a " + from + " order to " + target + " without an explicit refund/reopen workflow.");
+        }
+        orderStatusService.applyOrderStatus(order, target, "ADMIN", body.getOrDefault("note", "Status updated by admin"));
+        // keep fulfillment/payment aligned for common admin actions
+        if ("DELIVERED".equals(target)) orderStatusService.markFulfillment(order, "DELIVERED", "ADMIN", "Marked delivered by admin");
+        if ("SHIPPED".equals(target)) orderStatusService.markFulfillment(order, "SHIPPED", "ADMIN", "Marked shipped by admin");
+        if ("CANCELLED".equals(target)) orderStatusService.markFulfillment(order, "CANCELLED", "ADMIN", "Cancelled by admin");
         return orderRepository.save(order);
     }
 
@@ -78,14 +95,18 @@ public class AdminOrderController {
         if ("SHIPPED".equalsIgnoreCase(s.getStatus()) && s.getShippedAt() == null) s.setShippedAt(Instant.now());
         if ("DELIVERED".equalsIgnoreCase(s.getStatus()) && s.getDeliveredAt() == null) s.setDeliveredAt(Instant.now());
         shipmentRepository.save(s);
-        if ("DELIVERED".equalsIgnoreCase(s.getStatus()) && !"CANCELLED".equals(order.getStatus()) && !"REFUNDED".equals(order.getStatus())) {
-            order.setStatus("DELIVERED");
-        } else if ("SHIPPED".equalsIgnoreCase(s.getStatus()) && !"CANCELLED".equals(order.getStatus()) && !"REFUNDED".equals(order.getStatus()) && !"DELIVERED".equals(order.getStatus())) {
-            order.setStatus("SHIPPED");
+        if ("DELIVERED".equalsIgnoreCase(s.getStatus()) && !"CANCELLED".equalsIgnoreCase(order.getStatus()) && !"REFUNDED".equalsIgnoreCase(order.getStatus())) {
+            orderStatusService.applyOrderStatus(order, "DELIVERED", "ADMIN", "Manual shipment marked delivered");
+            orderStatusService.markFulfillment(order, "DELIVERED", "ADMIN", "Manual shipment delivered");
+        } else if ("SHIPPED".equalsIgnoreCase(s.getStatus()) && !"CANCELLED".equalsIgnoreCase(order.getStatus()) && !"REFUNDED".equalsIgnoreCase(order.getStatus()) && !"DELIVERED".equalsIgnoreCase(order.getStatus())) {
+            orderStatusService.applyOrderStatus(order, "SHIPPED", "ADMIN", "Manual shipment added");
+            orderStatusService.markFulfillment(order, "SHIPPED", "ADMIN", "Manual shipment in transit/shipped");
         }
         orderRepository.save(order);
         return s;
     }
+
+    private static String nz(String s) { return s == null ? "" : s; }
 
     @PostMapping("/{orderNumber}/cj/submit")
     public Map<String, Object> submitToCj(@PathVariable String orderNumber, @RequestBody(required = false) Map<String, String> body) {
