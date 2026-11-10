@@ -14,6 +14,7 @@ export default function AdminOrderDetailPage() {
   const [saving, setSaving] = useState(false);
   const [cjBusy, setCjBusy] = useState(false);
   const [ship, setShip] = useState({ carrier: '', trackingNumber: '', trackingUrl: '', status: 'SHIPPED' });
+  const [cjOpts, setCjOpts] = useState({ logisticName: '', fromCountryCode: 'CN', remark: '' });
   const [msg, setMsg] = useState('');
 
   const load = async () => {
@@ -54,8 +55,13 @@ export default function AdminOrderDetailPage() {
     if (!apiEnabled) { setMsg('Demo mode: CJ actions unavailable.'); return; }
     setCjBusy(true); setMsg('');
     try {
-      const res = await adminApi.submitOrderToCj(orderNumber);
-      setMsg(res?.cjOrderId ? `Submitted to CJ (CJ order ${res.cjOrderId}). Tracking/status will sync from CJ.` : 'Submitted to CJ.');
+      const options = {
+        ...(cjOpts.logisticName?.trim() ? { logisticName: cjOpts.logisticName.trim() } : {}),
+        ...(cjOpts.fromCountryCode?.trim() ? { fromCountryCode: cjOpts.fromCountryCode.trim().toUpperCase() } : {}),
+        ...(cjOpts.remark?.trim() ? { remark: cjOpts.remark.trim() } : {}),
+      };
+      const res = await adminApi.submitOrderToCj(orderNumber, options);
+      setMsg(res?.cjOrderId || res?.cjFulfillment?.cjOrderId ? `Submitted to CJ (CJ order ${res?.cjOrderId || res?.cjFulfillment?.cjOrderId}). Tracking/status will sync from CJ.` : 'Submitted to CJ.');
       await load();
     } catch (err) { setMsg(err?.response?.data?.error?.message || 'CJ submission failed.'); }
     finally { setCjBusy(false); }
@@ -95,11 +101,19 @@ export default function AdminOrderDetailPage() {
                   {cj?.cjFulfillmentStatus && <p><span className="text-[#6b7280]">CJ status:</span> {cj.cjFulfillmentStatus}</p>}
                   {cj?.cjLastSyncAt && <p><span className="text-[#6b7280]">Last sync:</span> {new Date(cj.cjLastSyncAt).toLocaleString()}</p>}
                   {cj?.cjLastError && <p className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-[12px] text-amber-900"><span className="font-medium">CJ issue:</span> {cj.cjLastError}</p>}
+                  {!cj?.cjOrderId && (
+                    <div className="mt-2 grid gap-2 rounded-xl border border-[#eef0f2] bg-[#fafafa] p-3">
+                      <p className="text-[12px] font-medium text-[#374151]">Submit options (if CJ requires them)</p>
+                      <label className="block"><span className="text-[12px] text-[#6b7280]">Logistic name</span><input className={`${inputClass} mt-1`} placeholder="e.g. CJPacket Ordinary (as required by CJ)" value={cjOpts.logisticName} onChange={(e)=>setCjOpts(f=>({...f,logisticName:e.target.value}))} /></label>
+                      <label className="block"><span className="text-[12px] text-[#6b7280]">From country code (warehouse/origin)</span><input className={`${inputClass} mt-1`} placeholder="CN" value={cjOpts.fromCountryCode} onChange={(e)=>setCjOpts(f=>({...f,fromCountryCode:e.target.value}))} /></label>
+                      <label className="block"><span className="text-[12px] text-[#6b7280]">Remark (optional)</span><input className={`${inputClass} mt-1`} value={cjOpts.remark} onChange={(e)=>setCjOpts(f=>({...f,remark:e.target.value}))} /></label>
+                    </div>
+                  )}
                   <div className="flex flex-wrap gap-2 pt-1">
                     <AdminButton onClick={submitCj} loading={cjBusy} disabled={saving || !!cj?.cjOrderId}>{cj?.cjOrderId ? 'Submitted to CJ' : 'Submit to CJ'}</AdminButton>
                     <AdminButton variant="secondary" onClick={syncCj} loading={cjBusy} disabled={saving || !cj?.cjOrderId}>Sync from CJ</AdminButton>
                   </div>
-                  <p className="text-[12px] text-[#6b7280]">Auto-submits when payment is confirmed (<code className="rounded bg-[#f3f4f6] px-1">CJ_AUTO_SUBMIT_ON_PAID=true</code>, default). Optional: <code className="rounded bg-[#f3f4f6] px-1">CJ_AUTO_SUBMIT_ON_CREATE=true</code> submits on order creation (before payment). Requires CJ variant IDs on order items. Configure CJ webhook <code className="rounded bg-[#f3f4f6] px-1">/api/v1/webhooks/cj</code> and <code className="rounded bg-[#f3f4f6] px-1">CJ_FULFILLMENT_SYNC_ENABLED=true</code> for automatic tracking/status updates.</p>
+                  <p className="text-[12px] text-[#6b7280]">Auto-submits when payment is confirmed (<code className="rounded bg-[#f3f4f6] px-1">CJ_AUTO_SUBMIT_ON_PAID=true</code>, default). If CJ requires specific logistic/warehouse details, set defaults on backend or enter them above and submit manually. Requires CJ variant IDs on order items. Configure CJ webhook <code className="rounded bg-[#f3f4f6] px-1">/api/v1/webhooks/cj</code> and <code className="rounded bg-[#f3f4f6] px-1">CJ_FULFILLMENT_SYNC_ENABLED=true</code> for automatic tracking/status updates.</p>
                 </div>
               </AdminCard>
               <AdminCard title="Shipping address">
