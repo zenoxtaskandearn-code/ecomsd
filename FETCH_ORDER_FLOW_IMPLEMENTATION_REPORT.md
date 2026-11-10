@@ -7,29 +7,28 @@
 
 ---
 
-## 1. Work completed in this iteration
+## 1. Work completed
 
 ### Phase 1 — Audit (completed)
-- **Created:** `FETCH_ORDER_FLOW_AUDIT.md`
-- **Contents:** inspected existing frontend/backend/schema/config/integrations and documented:
-  - what is working, partially implemented, missing, and incorrectly/riskily implemented
-  - duplicate order/payment/fulfillment risks
-  - financial loss risks
-  - security vulnerabilities/gaps
-  - architecture/data observations and prioritized implementation plan
+- **Created:** `FETCH_ORDER_FLOW_AUDIT.md` with findings on working/partial/missing/risky areas, duplicate/payment/fulfillment risks, financial-loss risks, security gaps, and prioritized plan.
 
-### Immediate safety improvements (implemented)
-- **Manual approval default for CJ fulfillment (safety):**
-  - `backend/src/main/java/com/fetch/backend/order/cj/CjAutoSubmitter.java`: `CJ_AUTO_SUBMIT_ON_PAID` default changed from `true` to **`false`** (auto-submit disabled unless explicitly enabled).
-  - `render.yaml`: `CJ_AUTO_SUBMIT_ON_PAID` default set to **`"false"`**.
-  - `backend/src/main/java/com/fetch/backend/order/cj/CjFulfillmentService.java`: submit path now blocks cancelled/refunded orders, clarifies paid-only standard flow, and keeps idempotent “already submitted” guard (sync on existing `cjOrderId`).
-- **Build:** backend `mvn -DskipTests compile` succeeds after changes.
+### Safety & payment correctness (implemented, committed/pushed)
+- **CJ manual-approval default:** `CJ_AUTO_SUBMIT_ON_PAID` defaulted to **`false`** (`CjAutoSubmitter`, `render.yaml`). Auto-submit on paid/create remains disabled unless explicitly enabled.
+- **CJ submit guards:** rejects cancelled/refunded orders, requires server-confirmed payment for standard submit flow, and remains idempotent when `cjOrderId` already exists (sync-on-existing).
+- **PayPal verification hardening:** capture and webhook reconciliation verify captured amount/currency against server-side order totals; mismatches are recorded/acknowledged without marking orders paid/fulfilled. Existing captured/paid orders remain idempotent.
 
-### Previously delivered in this codebase/session (relevant, reused)
-- Server-side order creation from cart with snapshots and PayPal create/capture + webhook verification/idempotent event handling.
-- Customer order history/detail with enriched tracking timeline, fulfillment/supplier info, expected delivery estimate, and shipment details (from stored/synced data).
-- CJ official-API integration primitives: product import (ACTIVE/deduped), submit/sync/tracking/stock client calls, CJ webhook handling, scheduler, and admin CJ actions.
-- Admin catalog/order/dashboard improvements, competitive pricing migration/tooling, and policy/FAQ content updates.
+### Phase 2 foundations — state/history & fulfillment wiring (implemented, committed/pushed)
+- **DB migration:** `V13__order_status_history_and_status_fields.sql` adds `orders.payment_status`, `orders.fulfillment_status`, and `order_status_history` (domain/from/to/source/note/metadata/timestamps) with backfill/indexes.
+- **Domain/service:** `OrderStatusHistory` entity/repository and `OrderStatusService` for recording ORDER/PAYMENT/FULFILLMENT transitions and syncing derived statuses.
+- **Order/Payment wiring:** order creation records initial status history and sets separate payment/fulfillment states; PayPal capture/failure updates record payment/order/fulfillment history with server-confirmed states.
+- **CJ fulfillment safety & wiring:** `CjFulfillmentService` enforces pre-submit checks (paid/allowed states, all items have active variants with CJ variant mapping, shipping address completeness for country/city/line1), sets REVIEW_REQUIRED/PROCESSING/SUBMITTED fulfillment states with history, records failures, and sync maps CJ/tracking states to order/fulfillment history (without auto-cancelling paid orders on supplier cancellation signals).
+- **Admin transitions:** admin status updates and manual shipments now record status/fulfillment history and include basic safeguards (cannot mark PAID without captured payment; cannot reopen cancelled/refunded orders via simple status change).
+
+### Build status
+- Backend compiles successfully: `mvn -DskipTests compile` (Java 17). No automated scenario tests added/run in this environment.
+
+### Previously delivered/reused (relevant)
+- Server-side order creation from cart with snapshots; PayPal create/capture + webhook signature verification and event-id idempotency; enriched customer tracking; CJ import/submit/sync/webhook/scheduler primitives; admin catalog/order/dashboard improvements.
 
 ---
 
@@ -74,21 +73,21 @@
 - **Live production checks (read-only):** health `UP`; public catalog/product endpoints responsive and serving enriched fields; protected endpoints correctly require auth (401). Full authenticated admin/customer and CJ/PayPal E2E flows not executable without credentials and external configuration.
 - **Required scenarios (18):** **not fully executed/verified** (require mocked CJ, PayPal Sandbox flows, concurrency/security cases, and environment access).
 
-## 10. Remaining manual configuration / external dependencies
-- Render: deploy latest, set/verify all env vars and secrets, confirm CORS/base URLs.
-- CJ: allowlist/static egress IP, correct API key/openId/webhook secret, warehouse/logistic/from-country/order-create path, webhook registration, and confirmation of order payment/confirmation requirements per official API.
-- PayPal: correct sandbox/live credentials and `PAYPAL_WEBHOOK_ID`, webhook subscription/events, and E2E validation.
-- **Security:** rotate all previously exposed secrets (CJ/DB/JWT/PayPal).
-- Data: populate variant supplier/fulfillment costs and enrich product content; clean remaining test/duplicate data as needed.
+## 10. Remaining work to fully satisfy the requested spec (must be completed)
+- **State machine & idempotency (complete):** enforce a full validated state machine for all required states/transitions, persist/use status history everywhere, and add robust idempotency/outbox-style guards for checkout/cart conversion, PayPal create/capture/retries/timeouts, CJ submit/retry/timeout reconciliation, refunds, and concurrent/race cases (including duplicate-purchase prevention).
+- **CJ fulfillment (complete):** explicit manual-approval workflow in admin, supplier-order/fulfillment records, and full pre-submit gates including real-time/current **stock** and **supplier price recheck/thresholds**, shipping method availability and **shipping cost limits**, destination support, expected-vs-actual cost checks, and fraud/manual-review flags; implement safe handling of CJ order confirmation/payment requirements per official API capabilities (no undocumented spend) and reliable tracking sync/webhooks.
+- **Financials:** per-order `OrderCost`/breakdown (customer subtotal/shipping/discount/tax/fees/refunds, supplier product/shipping/duties/other/conversions, business costs), correct net/gross/contribution/estimated profit calculations with currency handling, and admin financial views/exports (CSV).
+- **Notifications:** queue/retry/dedup notification system and templates/events for order/payment/processing/fulfillment/shipment/tracking/delivery/cancel/refund (document env vars if not configured).
+- **Returns/refunds/disputes:** entities/APIs/UI for customer return requests and admin review/processing; PayPal refund initiation/status via supported APIs with duplicate-refund protection; handling for chargebacks/disputes/lost/damaged/incorrect/cancelled cases.
+- **Security & reliability hardening:** rate limiting/throttling, comprehensive validation, audit logs for sensitive actions/events, stricter webhook verification/policies (CJ fail-safe), object-level access controls/secure tracking references, and error/retry/transaction safety review.
+- **Testing:** implement and run all 18 required scenarios with **mocked CJ** and **PayPal Sandbox** (including concurrency/idempotency/security), record results, and fix defects; verify responsive/admin+customer workflows.
 
-## 11. Known limitations / gaps (high level — see `FETCH_ORDER_FLOW_AUDIT.md`)
-- No complete separate payment/order/fulfillment state machine with persisted status history and validated transitions for all required states.
-- Idempotency/guards incomplete for all checkout/cart/payment/CJ retry/timeout/race scenarios (including CJ submit outbox/reconciliation).
-- CJ fulfillment not yet enforced as manual-approval-first workflow with full pre-submit gates (stock, supplier price delta/thresholds, shipping availability/cost limits, destination, fraud/review flags) and complete supplier-order/fulfillment/cost records.
-- No full per-order financial breakdown (fees, refunds, supplier actuals, conversions, net/gross/contribution) or CSV/export/reporting as specified.
-- No customer notification/email pipeline (queue/retry/dedup) and no returns/refunds/disputes workflows/entities/UI/APIs.
-- Security/ops hardening incomplete (rate limiting, comprehensive audit logging, full object-level protections, CJ signature fail-safe policy review, etc.).
-- Required end-to-end and scenario test coverage not implemented.
+## 11. Manual/external configuration required (cannot be completed from code alone)
+- Deploy/verify latest on Render with correct env vars/secrets and CORS/base URLs (migrations V13+ will apply on deploy).
+- **Rotate exposed secrets:** CJ API key/credentials, DB, JWT, PayPal (were exposed in chat/logs).
+- CJ: static/allowlisted egress IP/proxy for Render (`74.220.48.219` previously rate-limited), correct API key/openId/webhook secret, warehouse/logistics/from-country/order-create/payment/confirmation settings per official docs, webhook registration, and sync verification for submitted orders (e.g. FT-652897).
+- PayPal: sandbox/live credentials, `PAYPAL_WEBHOOK_ID`, webhook events/subscription, and end-to-end payment/refund/webhook validation.
+- Data quality: populate/verify variant supplier/fulfillment costs and product enrichment; reconcile/clean test or inconsistent records as needed.
 
 ## 12. Deployment instructions (current)
 1. Ensure PostgreSQL, backend, and frontend services configured (Render blueprint or equivalent) with correct env vars/secrets and `VITE_API_BASE_URL` set before frontend build.
