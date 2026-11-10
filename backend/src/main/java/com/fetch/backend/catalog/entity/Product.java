@@ -16,7 +16,7 @@ public class Product {
     private String name;
     @Column(nullable = false, unique = true)
     private String slug;
-    @Column(columnDefinition = "MEDIUMTEXT")
+    @Column(columnDefinition = "TEXT")
     private String description;
     @Column(name = "base_price_amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal basePriceAmount;

@@ -16,7 +16,7 @@ public class Shipment {
     @Column(name = "shipped_at") private Instant shippedAt;
     @Column(name = "delivered_at") private Instant deliveredAt;
     @Column(name = "cj_track_synced_at") private Instant cjTrackSyncedAt;
-    @Column(name = "cj_raw_snapshot", columnDefinition = "JSON") private String cjRawSnapshot;
+    @Column(name = "cj_raw_snapshot", columnDefinition = "jsonb") private String cjRawSnapshot;
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;
     @PrePersist void onCreate() { Instant now = Instant.now(); createdAt = now; updatedAt = now; }

@@ -1,5 +1,5 @@
 CREATE TABLE users (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    id BIGSERIAL PRIMARY KEY,
     email VARCHAR(255) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     first_name VARCHAR(100),
@@ -7,14 +7,14 @@ CREATE TABLE users (
     phone VARCHAR(30),
     role VARCHAR(30) NOT NULL,
     status VARCHAR(30) NOT NULL,
-    email_verified_at DATETIME(3) NULL,
-    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    email_verified_at TIMESTAMP(3) NULL,
+    created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uk_users_email UNIQUE (email)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
 
 CREATE TABLE addresses (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL,
     type VARCHAR(20) NOT NULL,
     full_name VARCHAR(150),
@@ -23,26 +23,26 @@ CREATE TABLE addresses (
     city VARCHAR(120) NOT NULL,
     state VARCHAR(120) NOT NULL,
     postal_code VARCHAR(30) NOT NULL,
-    country_code CHAR(2) NOT NULL DEFAULT 'US',
+    country_code VARCHAR(2) NOT NULL DEFAULT 'US',
     phone VARCHAR(30),
     is_default BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-    CONSTRAINT fk_addresses_user FOREIGN KEY (user_id) REFERENCES users(id),
-    INDEX idx_addresses_user (user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_addresses_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE INDEX idx_addresses_user ON addresses (user_id);
 
 CREATE TABLE refresh_tokens (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL,
     token_hash VARCHAR(255) NOT NULL,
-    expires_at DATETIME(3) NOT NULL,
-    revoked_at DATETIME(3) NULL,
+    expires_at TIMESTAMP(3) NOT NULL,
+    revoked_at TIMESTAMP(3) NULL,
     replaced_by_token_id BIGINT NULL,
-    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_refresh_tokens_user FOREIGN KEY (user_id) REFERENCES users(id),
-    CONSTRAINT fk_refresh_tokens_replaced FOREIGN KEY (replaced_by_token_id) REFERENCES refresh_tokens(id),
-    INDEX idx_refresh_tokens_user (user_id),
-    INDEX idx_refresh_tokens_hash (token_hash),
-    INDEX idx_refresh_tokens_expires (expires_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    CONSTRAINT fk_refresh_tokens_replaced FOREIGN KEY (replaced_by_token_id) REFERENCES refresh_tokens(id)
+);
+CREATE INDEX idx_refresh_tokens_user ON refresh_tokens (user_id);
+CREATE INDEX idx_refresh_tokens_hash ON refresh_tokens (token_hash);
+CREATE INDEX idx_refresh_tokens_expires ON refresh_tokens (expires_at);

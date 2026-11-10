@@ -1,8 +1,3 @@
--- Normalize CHAR columns to VARCHAR for Hibernate/JPA validation compatibility (MySQL).
-ALTER TABLE addresses MODIFY COLUMN country_code VARCHAR(2) NOT NULL DEFAULT 'US';
-ALTER TABLE products MODIFY COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'USD';
-ALTER TABLE product_variants MODIFY COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'USD';
-ALTER TABLE supplier_products MODIFY COLUMN currency VARCHAR(3) NULL;
-ALTER TABLE carts MODIFY COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'USD';
-ALTER TABLE orders MODIFY COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'USD';
-ALTER TABLE payments MODIFY COLUMN currency VARCHAR(3) NOT NULL DEFAULT 'USD';
+-- PostgreSQL: currency/country_code columns are already VARCHAR in base migrations.
+-- Kept as a versioned no-op for migration history compatibility.
+SELECT 1;

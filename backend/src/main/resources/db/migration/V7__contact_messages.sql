@@ -1,11 +1,11 @@
 CREATE TABLE contact_messages (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    id BIGSERIAL PRIMARY KEY,
     name VARCHAR(150) NOT NULL,
     email VARCHAR(255) NOT NULL,
     subject VARCHAR(200),
     message TEXT NOT NULL,
     status VARCHAR(30) NOT NULL DEFAULT 'NEW',
-    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    INDEX idx_contact_created (created_at),
-    INDEX idx_contact_status (status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_contact_created ON contact_messages (created_at);
+CREATE INDEX idx_contact_status ON contact_messages (status);

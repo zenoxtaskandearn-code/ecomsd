@@ -29,9 +29,9 @@ public class Order {
     private BigDecimal totalAmount;
     @Column(name = "customer_email", nullable = false)
     private String customerEmail;
-    @Column(name = "shipping_address_snapshot", nullable = false, columnDefinition = "JSON")
+    @Column(name = "shipping_address_snapshot", nullable = false, columnDefinition = "jsonb")
     private String shippingAddressSnapshot;
-    @Column(name = "billing_address_snapshot", columnDefinition = "JSON")
+    @Column(name = "billing_address_snapshot", columnDefinition = "jsonb")
     private String billingAddressSnapshot;
     @Column(name = "notes_internal", columnDefinition = "TEXT")
     private String notesInternal;
@@ -47,7 +47,7 @@ public class Order {
     private Instant cjLastSyncAt;
     @Column(name = "cj_last_error", columnDefinition = "TEXT")
     private String cjLastError;
-    @Column(name = "cj_raw_snapshot", columnDefinition = "JSON")
+    @Column(name = "cj_raw_snapshot", columnDefinition = "jsonb")
     private String cjRawSnapshot;
     @Column(name = "placed_at") private Instant placedAt;
     @Column(name = "paid_at") private Instant paidAt;
