@@ -1,6 +1,8 @@
 package com.fetch.backend.order.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.math.BigDecimal;
 import java.time.Instant;
 
@@ -29,8 +31,10 @@ public class Order {
     private BigDecimal totalAmount;
     @Column(name = "customer_email", nullable = false)
     private String customerEmail;
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "shipping_address_snapshot", nullable = false, columnDefinition = "jsonb")
     private String shippingAddressSnapshot;
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "billing_address_snapshot", columnDefinition = "jsonb")
     private String billingAddressSnapshot;
     @Column(name = "notes_internal", columnDefinition = "TEXT")
@@ -47,6 +51,7 @@ public class Order {
     private Instant cjLastSyncAt;
     @Column(name = "cj_last_error", columnDefinition = "TEXT")
     private String cjLastError;
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "cj_raw_snapshot", columnDefinition = "jsonb")
     private String cjRawSnapshot;
     @Column(name = "placed_at") private Instant placedAt;

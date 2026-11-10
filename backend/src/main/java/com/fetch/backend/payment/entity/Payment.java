@@ -1,6 +1,8 @@
 package com.fetch.backend.payment.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.math.BigDecimal;
 import java.time.Instant;
 
@@ -25,6 +27,7 @@ public class Payment {
     private String currency = "USD";
     @Column(name = "idempotency_key", unique = true)
     private String idempotencyKey;
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "raw_response_redacted", columnDefinition = "jsonb")
     private String rawResponseRedacted;
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;

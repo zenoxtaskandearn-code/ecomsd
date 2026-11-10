@@ -82,6 +82,7 @@ export default function AdminProductsPage() {
   const [cjPreviewLoading, setCjPreviewLoading] = useState(false);
   const [cjPreviewError, setCjPreviewError] = useState('');
   const [selectedCjIds, setSelectedCjIds] = useState([]);
+  const [autoAddDone, setAutoAddDone] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -121,7 +122,7 @@ export default function AdminProductsPage() {
 
   const loadCjPreview = async (opts = {}) => {
     if (!apiEnabled) return;
-    setCjPreviewLoading(true); setCjPreviewError(''); setAutoError(''); setAutoResult(null);
+    setCjPreviewLoading(true); setCjPreviewError(''); setAutoError(''); setAutoResult(null); setAutoAddDone(false);
     try {
       const payload = { maxProducts: Math.min(200, Math.max(1, Number(opts.maxProducts ?? autoMax) || 100)) };
       const kw = (opts.keyword ?? autoKeyword);
@@ -141,6 +142,16 @@ export default function AdminProductsPage() {
       loadCjPreview();
     }
   }, [showImport, apiEnabled, cjStatus?.apiConfigured]);
+
+  useEffect(() => {
+    if (!showImport || autoAddDone || autoSaving || cjPreviewLoading || !cjPreview?.products?.length) return;
+    if (cjStatus && !cjStatus.apiConfigured) return;
+    const ids = (cjPreview.products || []).filter((p) => p && p.cjProductId && !p.alreadyImported).map((p) => p.cjProductId);
+    if (!ids.length) return;
+    if (!autoCategoryId) return;
+    setAutoAddDone(true);
+    addCjProducts(ids, 'auto-add');
+  }, [showImport, autoAddDone, autoSaving, cjPreviewLoading, cjPreview, cjStatus, autoCategoryId]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -270,7 +281,7 @@ export default function AdminProductsPage() {
   return (
     <AdminLayout title="Products" subtitle="Manage catalog, CJdropshipping imports, pricing, and visibility" actions={
       <div className="flex flex-wrap gap-2">
-        <AdminButton variant="secondary" onClick={() => setShowImport((v) => { const next = !v; if (!next) { setCjPreview(null); setCjPreviewError(''); setSelectedCjIds([]); setAutoResult(null); setAutoError(''); setCjStatus(null); } return next; })}><Download size={15} /> Import from CJdropshipping</AdminButton>
+        <AdminButton variant="secondary" onClick={() => setShowImport((v) => { const next = !v; if (!next) { setCjPreview(null); setCjPreviewError(''); setSelectedCjIds([]); setAutoResult(null); setAutoError(''); setCjStatus(null); setAutoAddDone(false); } return next; })}><Download size={15} /> Import from CJdropshipping</AdminButton>
         <AdminButton onClick={() => setEditing('new')}><Plus size={15} /> Add product</AdminButton>
       </div>
     }>

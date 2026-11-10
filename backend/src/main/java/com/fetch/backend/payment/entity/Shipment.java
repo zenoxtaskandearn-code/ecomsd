@@ -1,6 +1,8 @@
 package com.fetch.backend.payment.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.Instant;
 
 @Entity @Table(name = "shipments")
@@ -16,6 +18,7 @@ public class Shipment {
     @Column(name = "shipped_at") private Instant shippedAt;
     @Column(name = "delivered_at") private Instant deliveredAt;
     @Column(name = "cj_track_synced_at") private Instant cjTrackSyncedAt;
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "cj_raw_snapshot", columnDefinition = "jsonb") private String cjRawSnapshot;
     @Column(name = "created_at", nullable = false, updatable = false) private Instant createdAt;
     @Column(name = "updated_at", nullable = false) private Instant updatedAt;

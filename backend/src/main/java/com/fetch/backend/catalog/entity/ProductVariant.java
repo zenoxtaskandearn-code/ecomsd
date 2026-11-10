@@ -1,6 +1,8 @@
 package com.fetch.backend.catalog.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.math.BigDecimal;
 import java.time.Instant;
 
@@ -15,6 +17,7 @@ public class ProductVariant {
     @Column(nullable = false, unique = true)
     private String sku;
     private String title;
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "option_values_json", columnDefinition = "jsonb")
     private String optionValuesJson;
     @Column(name = "price_amount", nullable = false, precision = 12, scale = 2)
