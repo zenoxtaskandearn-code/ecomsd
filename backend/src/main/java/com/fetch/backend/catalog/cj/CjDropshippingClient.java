@@ -96,7 +96,7 @@ public class CjDropshippingClient {
                         firstText(n, "nameEn", "name", "productNameEn", "productName"),
                         firstText(n, "sku", "productSku", "spu"),
                         firstText(n, "bigImage", "productImage", "image"),
-                        decimal(n, "sellPrice", "discountPrice", "nowPrice", "totalPrice"),
+                        decimal(n, "sellPrice", "discountPrice", "nowPrice", "totalPrice", "productSellPrice", "minPrice", "maxPrice", "sourceFromPrice", "price"),
                         firstText(n, "vid", "variantId")));
             }
         }
