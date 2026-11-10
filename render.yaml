@@ -37,32 +37,42 @@ services:
         fromDatabase:
           name: lupineandleash-db
           property: password
+      - key: DB_SSLMODE
+        value: require
       - key: JWT_SECRET
         generateValue: true
       - key: CORS_ALLOWED_ORIGINS
-        sync: false
+        value: https://lupineandleash-frontend.onrender.com
       - key: PAYPAL_MODE
         value: sandbox
       - key: PAYPAL_BASE_URL
-        sync: false
+        value: https://api-m.sandbox.paypal.com
       - key: PAYPAL_CLIENT_ID
-        sync: false
+        value: ""
       - key: PAYPAL_CLIENT_SECRET
-        sync: false
+        value: ""
       - key: PAYPAL_WEBHOOK_ID
-        sync: false
+        value: ""
       - key: CJ_API_ENABLED
         value: "false"
       - key: CJ_API_KEY
-        sync: false
+        value: ""
+      - key: CJ_WEBHOOK_SECRET
+        value: ""
       - key: CJ_AUTO_SUBMIT_ON_PAID
         value: "true"
       - key: CJ_AUTO_SUBMIT_ON_CREATE
         value: "false"
       - key: CJ_FULFILLMENT_SYNC_ENABLED
         value: "false"
-      - key: CJ_WEBHOOK_SECRET
-        sync: false
+      - key: CJ_FULFILLMENT_SYNC_DELAY_MS
+        value: "900000"
+      - key: CJ_FULFILLMENT_SYNC_INITIAL_DELAY_MS
+        value: "120000"
+      - key: CJ_FULFILLMENT_SYNC_BATCH_SIZE
+        value: "10"
+      - key: CJ_ORDER_CREATE_PATH
+        value: /shopping/order/createOrderV2
 
   # Vite/React frontend (static site)
   - type: web
@@ -74,7 +84,7 @@ services:
     autoDeploy: true
     envVars:
       - key: VITE_API_BASE_URL
-        sync: false
+        value: https://lupineandleash-backend.onrender.com/api/v1
     routes:
       - type: rewrite
         source: /*
