@@ -1,0 +1,16 @@
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration
+  flyway:
+    enabled: false
+app:
+  cors:
+    allowed-origins:
+      - http://localhost:5173
+  jwt:
+    secret: test-secret-test-secret-test-secret-32
+    access-ttl-seconds: 900
+    refresh-ttl-seconds: 2592000

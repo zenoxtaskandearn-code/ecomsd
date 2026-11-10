@@ -1,0 +1,66 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-white font-sans text-fetch-ink antialiased;
+  }
+  ::selection {
+    @apply bg-fetch-lavender text-fetch-ink;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex h-11 items-center justify-center rounded-pill bg-fetch-dark px-7 text-[15px] font-medium tracking-[0.01em] text-white transition-colors duration-200 hover:bg-[#1a1c2b] active:bg-[#0c0d16] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fetch-dark;
+  }
+  .section-container {
+    @apply container mx-auto max-w-[1200px] px-5 sm:px-6 lg:px-8;
+  }
+}
+
+@keyframes fetch-marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.fetch-marquee {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent, black 3%, black 97%, transparent);
+  mask-image: linear-gradient(to right, transparent, black 3%, black 97%, transparent);
+}
+
+.fetch-marquee__track {
+  display: flex;
+  width: max-content;
+  animation: fetch-marquee var(--marquee-duration, 36s) linear infinite;
+  will-change: transform;
+}
+
+.fetch-marquee:hover .fetch-marquee__track,
+.fetch-marquee:focus-within .fetch-marquee__track {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fetch-marquee__track {
+    animation: none;
+    transform: none;
+  }
+}
