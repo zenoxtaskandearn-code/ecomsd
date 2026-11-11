@@ -32,6 +32,7 @@ management:
         enabled: true
 
 app:
+  frontend-base-url: ${FRONTEND_BASE_URL:https://lupineandleash-frontend.onrender.com}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
   jwt:
@@ -44,3 +45,13 @@ app:
     client-id: ${PAYPAL_CLIENT_ID:}
     client-secret: ${PAYPAL_CLIENT_SECRET:}
     webhook-id: ${PAYPAL_WEBHOOK_ID:}
+  notifications:
+    email-enabled: ${EMAIL_NOTIFICATIONS_ENABLED:false}
+    provider: ${EMAIL_PROVIDER:emailjs}
+    process-enabled: ${EMAIL_NOTIFICATIONS_PROCESS_ENABLED:true}
+    process-delay-ms: ${EMAIL_NOTIFICATIONS_PROCESS_DELAY_MS:30000}
+    emailjs:
+      service-id: ${EMAILJS_SERVICE_ID:}
+      template-id: ${EMAILJS_TEMPLATE_ID:}
+      public-key: ${EMAILJS_PUBLIC_KEY:}
+      private-key: ${EMAILJS_PRIVATE_KEY:}
