@@ -47,7 +47,10 @@ export default function LoginPage() {
               <input required type="email" autoComplete="email" className={`${inputClass} mt-1.5`} value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
             </label>
             <label className="block">
-              <span className="text-[13px] font-medium text-fetch-ink/80">Password</span>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[13px] font-medium text-fetch-ink/80">Password</span>
+                <Link to="/forgot-password" className="text-[13px] font-medium text-fetch-ink/70 underline decoration-fetch-ink/20 underline-offset-4 hover:text-fetch-ink">Forgot password?</Link>
+              </div>
               <input required type="password" autoComplete="current-password" className={`${inputClass} mt-1.5`} value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} />
             </label>
             {error ? <p className="text-[13px] text-red-700" role="alert">{error}</p> : null}
@@ -57,6 +60,9 @@ export default function LoginPage() {
           </form>
           <p className="mt-6 text-[14px] text-fetch-muted">
             New to Lupine &amp; Leash? <Link to="/register" className="font-medium text-fetch-ink underline decoration-fetch-ink/20 underline-offset-4">Create an account</Link>
+          </p>
+          <p className="mt-2 text-[13px] text-fetch-muted">
+            Didn’t receive activation email? <Link to="/resend-activation" className="font-medium text-fetch-ink/80 underline decoration-fetch-ink/20 underline-offset-4">Resend activation link</Link>
           </p>
         </div>
       </div>

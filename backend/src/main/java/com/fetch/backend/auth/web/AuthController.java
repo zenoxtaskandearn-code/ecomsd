@@ -17,7 +17,7 @@ public class AuthController {
 
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
-    public AuthDtos.AuthResponse register(@Valid @RequestBody AuthDtos.RegisterRequest request) {
+    public AuthDtos.RegisterResponse register(@Valid @RequestBody AuthDtos.RegisterRequest request) {
         return authService.register(request);
     }
 
@@ -35,5 +35,25 @@ public class AuthController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void logout(@RequestBody(required = false) AuthDtos.RefreshRequest request) {
         authService.logout(request == null ? null : request.refreshToken());
+    }
+
+    @PostMapping("/verify-email")
+    public AuthDtos.SimpleMessageResponse verifyEmail(@Valid @RequestBody AuthDtos.VerifyEmailRequest request) {
+        return authService.activateAccount(request.token());
+    }
+
+    @PostMapping("/resend-verification")
+    public AuthDtos.SimpleMessageResponse resendVerification(@Valid @RequestBody AuthDtos.ResendVerificationRequest request) {
+        return authService.resendActivation(request.email());
+    }
+
+    @PostMapping("/forgot-password")
+    public AuthDtos.SimpleMessageResponse forgotPassword(@Valid @RequestBody AuthDtos.ForgotPasswordRequest request) {
+        return authService.forgotPassword(request.email());
+    }
+
+    @PostMapping("/reset-password")
+    public AuthDtos.SimpleMessageResponse resetPassword(@Valid @RequestBody AuthDtos.ResetPasswordRequest request) {
+        return authService.resetPassword(request.token(), request.newPassword());
     }
 }

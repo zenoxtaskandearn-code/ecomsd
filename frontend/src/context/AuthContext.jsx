@@ -53,10 +53,12 @@ export function AuthProvider({ children }) {
     register: async (payload) => {
       if (apiEnabled) {
         const data = await authApi.register(payload);
-        setTokens(data); setUser(data.user); return { ok: true };
+        // New flow: registration requires email activation via one-time link; no tokens are issued yet.
+        return { ok: true, ...data };
       }
       await new Promise((r) => setTimeout(r, 750));
-      persistDemo({ email: payload.email, firstName: payload.firstName || 'New', lastName: payload.lastName || 'Customer' }); return { ok: true };
+      persistDemo({ email: payload.email, firstName: payload.firstName || 'New', lastName: payload.lastName || 'Customer' });
+      return { ok: true, success: true, requiresActivation: false, message: 'Account created.' };
     },
     logout: async () => {
       if (apiEnabled) {

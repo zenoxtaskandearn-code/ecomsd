@@ -28,4 +28,11 @@ public class AuthDtos {
             long expiresInSeconds,
             UserDtos.UserResponse user
     ) {}
+
+    public record RegisterResponse(boolean success, String message, String email, boolean requiresActivation) {}
+    public record SimpleMessageResponse(boolean success, String message) {}
+    public record VerifyEmailRequest(@NotBlank String token) {}
+    public record ResendVerificationRequest(@Email @NotBlank String email) {}
+    public record ForgotPasswordRequest(@Email @NotBlank String email) {}
+    public record ResetPasswordRequest(@NotBlank String token, @NotBlank @Size(min = 8, max = 128) String newPassword) {}
 }
